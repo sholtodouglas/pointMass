@@ -1,7 +1,0 @@
-README.md
-setup.py
-pointMass.egg-info/PKG-INFO
-pointMass.egg-info/SOURCES.txt
-pointMass.egg-info/dependency_links.txt
-pointMass.egg-info/requires.txt
-pointMass.egg-info/top_level.txt
