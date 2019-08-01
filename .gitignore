@@ -1,0 +1,4 @@
+/pointMass.egg-info/*
+/envs/superbasic.py
+/envs/paper_folding.py
+/envs/basic_tests.py
