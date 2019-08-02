@@ -1,5 +1,5 @@
 
-import gym
+import gym, gym.spaces, gym.utils, gym.utils.seeding
 import pybullet as p 
 import numpy as np
 import pybullet_data
