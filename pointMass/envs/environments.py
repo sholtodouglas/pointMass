@@ -46,7 +46,7 @@ class pointMassEnv(gym.Env):
 			x,y,x_vel,y_vel = s_i[0],s_i[1],v_i[0],v_i[1] 
 			self._p.resetBasePositionAndOrientation(self.mass, [x, y,-0.1], [0,0,0,1])
 			self._p.changeConstraint(self.mass_cid,[x, y,-0.1], maxForce = 100)
-			#self._p.resetBaseVelocity(self.mass,[x_vel, y_vel, 0])
+			self._p.resetBaseVelocity(self.mass,[x_vel, y_vel, 0])
 
 
 
@@ -172,8 +172,8 @@ class pointMassEnv(gym.Env):
 			# reset mass location
 			x  = self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT)
 			y  = self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT)
-			x_vel = self.np_random.uniform(low=-1, high=1)
-			y_vel = self.np_random.uniform(low=-1, high=1)
+			x_vel = 0#self.np_random.uniform(low=-1, high=1)
+			y_vel = 0#self.np_random.uniform(low=-1, high=1)
 
 			self.initalize_start_pos([x,y],[x_vel,y_vel])
 
