@@ -128,9 +128,9 @@ class pointMassEnv(gym.Env):
 		def reset(self):
 			#self._p.resetSimulation()
 
-			print('resetting')
+			
 			if self.physics_client_active == 0:
-				print('no physics')
+				
 				if self.isRender:
 					self._p = bullet_client.BulletClient(connection_mode=p.GUI)
 				else:
