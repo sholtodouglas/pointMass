@@ -1,5 +1,5 @@
 
-import gym, gym.spaces, gym.utils, gym.utils.seeding
+import gym, gym.utils, gym.utils.seeding
 import pybullet as p 
 import numpy as np
 import pybullet_data
@@ -7,9 +7,10 @@ import os
 import time
 from pybullet_utils import bullet_client
 urdfRoot=pybullet_data.getDataPath()
+import gym.spaces as spaces
 
 GUI = False
-class pointMassEnv(gym.Env):
+class pointMassEnv(gym.GoalEnv):
 
 
 		metadata = {
@@ -19,11 +20,19 @@ class pointMassEnv(gym.Env):
 
 		def __init__(self, render = False):
 			action_dim = 2
-			obs_dim = 6
+			obs_dim = 4
+			goal_dim = 2
 			high = np.ones([action_dim])
-			self.action_space = gym.spaces.Box(-high, high)
-			high = np.inf * np.ones([obs_dim])
-			self.observation_space = gym.spaces.Box(-high, high)
+			self.action_space = spaces.Box(-high, high)
+			high_obs = np.inf * np.ones([obs_dim])
+			high_goal = np.inf * np.ones([goal_dim])
+			self.observation_space = spaces.Dict(dict(
+	            desired_goal=spaces.Box(-high_goal, high_goal),
+	            achieved_goal=spaces.Box(-high_goal, high_goal),
+	            observation=spaces.Box(-high_obs, high_obs),
+        	))
+
+			
 			self.isRender = False
 			self._p = p
 			self.physics_client_active = 0
@@ -31,6 +40,8 @@ class pointMassEnv(gym.Env):
 			self.TARG_LIMIT = 3
 			self._seed()
 			
+
+
 			
 
 		def reset_goal_pos(self):
@@ -62,9 +73,18 @@ class pointMassEnv(gym.Env):
 			#print(x_vel, y_vel)
 			velocity_mag = (np.sum(np.array(self._p.getBaseVelocity(self.mass)[0])[0:2])**2)**(1/2)
 
-			return np.array([x,y,x_vel, y_vel,self.goal_x,self.goal_y])
+			obs = np.array([x,y,x_vel, y_vel])
+			achieved_goal = np.array([x,y])
+			goal = np.array([self.goal_x,self.goal_y])
+			return {
+	            'observation': obs.copy(),
+	            'achieved_goal': achieved_goal.copy(),
+	            'desired_goal':  goal.copy(),
+            }
+			
 
-		def calc_target_distance(self):
+
+		def calc_target_distance(self, achieved_goal, desired_goal):
 			
 			current_pos = self._p.getBasePositionAndOrientation(self.mass)[0]
 			x,y = current_pos[0], current_pos[1]
@@ -76,17 +96,16 @@ class pointMassEnv(gym.Env):
 		def calc_velocity_distance(self):
 			velocity = (np.sum(np.array(self._p.getBaseVelocity(self.mass)[0])[0:2])**2)**(1/2)
 			
-
 			return (velocity - self.goal_velocity)
 
 
 		def activate_movable_goal(self):
 			self.movable_goal = True
 
-		def calc_reward(self):
+		def compute_reward(self, achieved_goal, desired_goal, info = None):
 			
 			# reward given if new pos is closer than old
-			current_distance = self.calc_target_distance()
+			current_distance = self.calc_target_distance(achieved_goal, desired_goal)
 
 			position_reward = -1000*(current_distance - self.last_target_distance)
 			self.last_target_distance = current_distance
@@ -97,7 +116,6 @@ class pointMassEnv(gym.Env):
 				if current_distance < 2:
 					self.reset_goal_pos()
 
-			
 			# velocity_diff = self.calc_velocity_distance()
 			# velocity_reward = -100*(velocity_diff - self.last_velocity_distance)
 			# self.last_velocity_distance = velocity_diff
@@ -106,6 +124,23 @@ class pointMassEnv(gym.Env):
 			#print('Vreward', velocity_reward)
 
 			return position_reward#+velocity_reward
+
+		def set_sparse_reward(self):
+			print('Environment set to sparese reward')
+			self.compute_reward = self.compute_reward_sparse
+
+		def compute_reward_sparse(self, achieved_goal, desired_goal, info = None):
+			current_distance = self.calc_target_distance(achieved_goal, desired_goal)
+			reward = 0 
+			if current_distance < 0.5:
+				reward = 1
+
+			if self.movable_goal:
+				if current_distance < 2:
+					self.reset_goal_pos()
+			print(reward)
+			return reward
+
 
 		def step(self, action):
 			action = action * 0.13 # put it to the correct scale
@@ -120,9 +155,10 @@ class pointMassEnv(gym.Env):
 			for i in range(0,10):
 				self._p.stepSimulation()
 
+			obs = self.calc_state()
+			r = self.compute_reward(obs['achieved_goal'], obs['desired_goal'])
 
-
-			return self.calc_state(), self.calc_reward(), False, {}
+			return obs, r, False, {}
 
 
 		def reset(self):
@@ -166,8 +202,7 @@ class pointMassEnv(gym.Env):
 
 			self._p.resetBasePositionAndOrientation(self.mass, [0, 0,0.4], [0,0,0,1])
 			self.reset_goal_pos()
-			self.last_target_distance = self.calc_target_distance()
-			self.last_velocity_distance = self.calc_velocity_distance()
+			
 
 			# reset mass location
 			x  = self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT)
@@ -176,13 +211,16 @@ class pointMassEnv(gym.Env):
 			y_vel = 0#self.np_random.uniform(low=-1, high=1)
 
 			self.initalize_start_pos([x,y],[x_vel,y_vel])
+			obs = self.calc_state()
+			self.last_target_distance = self.calc_target_distance(obs['achieved_goal'],obs['desired_goal'])
+			self.last_velocity_distance = self.calc_velocity_distance()
 
 			lookat = [0,0,0.1]
 			distance = 7
 			yaw = 0
 			self._p.resetDebugVisualizerCamera(distance, yaw, -89, lookat)
 
-			return self.calc_state()
+			return obs
 
 			
 
@@ -237,7 +275,6 @@ class pointMassEnv(gym.Env):
 # 	action = np.array([test_env._p.readUserDebugParameter(test_env.x_shift), test_env._p.readUserDebugParameter(test_env.y_shift)])
 # 	o2, r, d, _ = test_env.step(action)
 # 	print(o2)
-
 
 
 
