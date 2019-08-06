@@ -126,7 +126,7 @@ class pointMassEnv(gym.GoalEnv):
 			return position_reward#+velocity_reward
 
 		def set_sparse_reward(self):
-			print('Environment set to sparese reward')
+			print('Environment set to sparse reward')
 			self.compute_reward = self.compute_reward_sparse
 
 		def compute_reward_sparse(self, achieved_goal, desired_goal, info = None):
@@ -138,7 +138,7 @@ class pointMassEnv(gym.GoalEnv):
 			if self.movable_goal:
 				if current_distance < 2:
 					self.reset_goal_pos()
-			print(reward)
+			
 			return reward
 
 
