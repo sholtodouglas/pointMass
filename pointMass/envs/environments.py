@@ -49,8 +49,8 @@ class pointMassEnv(gym.GoalEnv):
 				self.goal_x  = self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT)
 				self.goal_y  = self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT)
 			else:
-				self.goal_x = goal_x
-				self.goal_y = goal_y
+				self.goal_x = goal[0]
+				self.goal_y = goal[1]
 			#self.goal_velocity = self.np_random.uniform(low=0, high=3)
 			
 			self._p.resetBasePositionAndOrientation(self.goal, [self.goal_x, self.goal_y,0.4], [0,0,0,1])
