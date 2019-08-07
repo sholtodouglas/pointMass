@@ -44,11 +44,14 @@ class pointMassEnv(gym.GoalEnv):
 
 			
 
-		def reset_goal_pos(self):
-
-			self.goal_x  = self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT)
-			self.goal_y  = self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT)
-			self.goal_velocity = self.np_random.uniform(low=0, high=3)
+		def reset_goal_pos(self, goal_x = None, goal_y = None):
+			if goal_x == None or goal_y == None:
+				self.goal_x  = self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT)
+				self.goal_y  = self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT)
+			else:
+				self.goal_x = goal_x
+				self.goal_y = goal_y
+			#self.goal_velocity = self.np_random.uniform(low=0, high=3)
 			
 			self._p.resetBasePositionAndOrientation(self.goal, [self.goal_x, self.goal_y,0.4], [0,0,0,1])
 			self._p.changeConstraint(self.goal_cid,[self.goal_x, self.goal_y,0.2], maxForce = 100)
@@ -93,10 +96,10 @@ class pointMassEnv(gym.GoalEnv):
 
 			return distance
 
-		def calc_velocity_distance(self):
-			velocity = (np.sum(np.array(self._p.getBaseVelocity(self.mass)[0])[0:2])**2)**(1/2)
+		# def calc_velocity_distance(self):
+		# 	velocity = (np.sum(np.array(self._p.getBaseVelocity(self.mass)[0])[0:2])**2)**(1/2)
 			
-			return (velocity - self.goal_velocity)
+		# 	return (velocity - self.goal_velocity)
 
 
 		def activate_movable_goal(self):
@@ -119,7 +122,7 @@ class pointMassEnv(gym.GoalEnv):
 			# velocity_diff = self.calc_velocity_distance()
 			# velocity_reward = -100*(velocity_diff - self.last_velocity_distance)
 			# self.last_velocity_distance = velocity_diff
-			velocity_reward = self.calc_velocity_distance()
+			#velocity_reward = self.calc_velocity_distance()
 
 			#print('Vreward', velocity_reward)
 
@@ -213,7 +216,7 @@ class pointMassEnv(gym.GoalEnv):
 			self.initalize_start_pos([x,y],[x_vel,y_vel])
 			obs = self.calc_state()
 			self.last_target_distance = self.calc_target_distance(obs['achieved_goal'],obs['desired_goal'])
-			self.last_velocity_distance = self.calc_velocity_distance()
+			#self.last_velocity_distance = self.calc_velocity_distance()
 
 			lookat = [0,0,0.1]
 			distance = 7
