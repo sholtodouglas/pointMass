@@ -47,7 +47,7 @@ class pointMassEnv(gym.GoalEnv):
 			
 
 		def reset_goal_pos(self, goal = None):
-			if len(goal) == 0:
+			if goal is None:
 				self.goal_x  = self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT)
 				self.goal_y  = self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT)
 			else:
