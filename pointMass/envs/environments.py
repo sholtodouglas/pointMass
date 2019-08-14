@@ -37,15 +37,17 @@ class pointMassEnv(gym.GoalEnv):
 			self._p = p
 			self.physics_client_active = 0
 			self.movable_goal = False
+			self.roving_goal = False
 			self.TARG_LIMIT = 3
 			self._seed()
+			self.global_step = 0
 			
 
 
 			
 
 		def reset_goal_pos(self, goal = None):
-			if goal == None:
+			if len(goal) == 0:
 				self.goal_x  = self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT)
 				self.goal_y  = self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT)
 			else:
@@ -55,6 +57,8 @@ class pointMassEnv(gym.GoalEnv):
 			
 			self._p.resetBasePositionAndOrientation(self.goal, [self.goal_x, self.goal_y,0.4], [0,0,0,1])
 			self._p.changeConstraint(self.goal_cid,[self.goal_x, self.goal_y,0.2], maxForce = 100)
+
+		#TODO change the env initialise start pos to a more general form of the function
 
 		def initalize_start_pos(self, s_i, v_i):
 			x,y,x_vel,y_vel = s_i[0],s_i[1],v_i[0],v_i[1] 
@@ -80,19 +84,19 @@ class pointMassEnv(gym.GoalEnv):
 			achieved_goal = np.array([x,y])
 			goal = np.array([self.goal_x,self.goal_y])
 			return {
-	            'observation': obs.copy(),
-	            'achieved_goal': achieved_goal.copy(),
-	            'desired_goal':  goal.copy(),
+	            'observation': obs.copy().astype('float32'),
+	            'achieved_goal': achieved_goal.copy().astype('float32'),
+	            'desired_goal':  goal.copy().astype('float32'),
             }
 			
 
-
+		#TODO replace with cleaner code
 		def calc_target_distance(self, achieved_goal, desired_goal):
 			
-			current_pos = self._p.getBasePositionAndOrientation(self.mass)[0]
-			x,y = current_pos[0], current_pos[1]
-			
-			distance = abs(self.goal_x-x) + abs(self.goal_y-y)
+
+			x,y = achieved_goal[0], achieved_goal[1]
+			goal_x, goal_y = desired_goal[0], desired_goal[1]
+			distance = abs(goal_x-x) + abs(goal_y-y)
 
 			return distance
 
@@ -105,6 +109,9 @@ class pointMassEnv(gym.GoalEnv):
 		def activate_movable_goal(self):
 			self.movable_goal = True
 
+		def activate_roving_goal(self):
+			self.roving_goal = True
+
 		def compute_reward(self, achieved_goal, desired_goal, info = None):
 			
 			# reward given if new pos is closer than old
@@ -113,11 +120,7 @@ class pointMassEnv(gym.GoalEnv):
 			position_reward = -1000*(current_distance - self.last_target_distance)
 			self.last_target_distance = current_distance
 			
-			
-			if self.movable_goal:
 
-				if current_distance < 2:
-					self.reset_goal_pos()
 
 			# velocity_diff = self.calc_velocity_distance()
 			# velocity_reward = -100*(velocity_diff - self.last_velocity_distance)
@@ -138,10 +141,6 @@ class pointMassEnv(gym.GoalEnv):
 			if current_distance < 0.5:
 				reward = 1
 
-			if self.movable_goal:
-				if current_distance < 2:
-					self.reset_goal_pos()
-			
 			return reward
 
 
@@ -161,12 +160,23 @@ class pointMassEnv(gym.GoalEnv):
 			obs = self.calc_state()
 			r = self.compute_reward(obs['achieved_goal'], obs['desired_goal'])
 
+			current_distance = self.calc_target_distance(current_pos, [self.goal_x, self.goal_y])
+			if self.movable_goal:
+				if current_distance < 0.5:
+					self.reset_goal_pos()
+
+			if self.roving_goal:
+				if self.global_step % 60 == 0:
+					self.reset_goal_pos()
+
+			self.global_step += 1
+
 			return obs, r, False, {}
 
 
 		def reset(self):
 			#self._p.resetSimulation()
-
+			self.global_step = 0
 			
 			if self.physics_client_active == 0:
 				
