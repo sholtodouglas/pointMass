@@ -18,9 +18,14 @@ class pointMassEnv(gym.GoalEnv):
 		'video.frames_per_second': 60
 		}
 
-		def __init__(self, render = False):
+		def __init__(self, render = False, use_object = False, sparse = True):
+			self.use_object = use_object
+
 			action_dim = 2
 			obs_dim = 4
+
+			if use_object:
+				obs_dim += 4 # pos and vel of the other pm that we are knocking around.
 			goal_dim = 2
 			high = np.ones([action_dim])
 			self.action_space = spaces.Box(-high, high)
@@ -39,33 +44,69 @@ class pointMassEnv(gym.GoalEnv):
 			self.movable_goal = False
 			self.roving_goal = False
 			self.TARG_LIMIT = 3
+			self.TARG_MIN = 0.1
 			self._seed()
 			self.global_step = 0
+			self.opposite_goal = False
+			if sparse:
+				self.set_sparse_reward()
 			
 
-
+		def crop(self, num, lim):
+				if num >= 0 and num < lim:
+					num = lim
+				elif num < 0 and num > -lim:
+					num = -lim
+				return num
 			
 
 		def reset_goal_pos(self, goal = None):
-			if goal is None:
-				self.goal_x  = self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT)
-				self.goal_y  = self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT)
+			
+
+			if goal is None: 
+				self.goal_x  = self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT), self.TARG_MIN)
+				self.goal_y  = self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT), self.TARG_MIN)
 			else:
 				self.goal_x = goal[0]
 				self.goal_y = goal[1]
 			#self.goal_velocity = self.np_random.uniform(low=0, high=3)
+			try:
+				self._p.removeUserDebugItem(self.goal)
+			except:
+				pass
+
+			self.goal = self._p.addUserDebugText("o", [self.goal_x, self.goal_y, 0.1],
+                   textColorRGB=[0, 0, 1],
+                   textSize=2)
+
+
+			#self._p.resetBasePositionAndOrientation(self.goal, [self.goal_x, self.goal_y,0.4], [0,0,0,1])
+			#self._p.changeConstraint(self.goal_cid,[self.goal_x, self.goal_y,0.2], maxForce = 100)
+
+		def reset_object_pos(self, pos = None):
+			current_pos = self._p.getBasePositionAndOrientation(self.mass)[0]
+			pos = np.array(current_pos)+(np.random.rand(3)*2)-1
+
 			
-			self._p.resetBasePositionAndOrientation(self.goal, [self.goal_x, self.goal_y,0.4], [0,0,0,1])
-			self._p.changeConstraint(self.goal_cid,[self.goal_x, self.goal_y,0.2], maxForce = 100)
+			if pos is None: 
+				pos = [self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT), self.TARG_MIN),
+						self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT), self.TARG_MIN)]
+
+			#self.goal_velocity = self.np_random.uniform(low=0, high=3)
+			self._p.resetBasePositionAndOrientation(self.object, [pos[0], pos[1],0.4], [0,0,0,1])
+
+
+
 
 		#TODO change the env initialise start pos to a more general form of the function
+
+
 
 		def initalize_start_pos(self, s_i, v_i):
 			x,y,x_vel,y_vel = s_i[0],s_i[1],v_i[0],v_i[1] 
 			self._p.resetBasePositionAndOrientation(self.mass, [x, y,-0.1], [0,0,0,1])
 			self._p.changeConstraint(self.mass_cid,[x, y,-0.1], maxForce = 100)
 			self._p.resetBaseVelocity(self.mass,[x_vel, y_vel, 0])
-
 
 
 
@@ -79,12 +120,21 @@ class pointMassEnv(gym.GoalEnv):
 			x_vel, y_vel = velocity[0], velocity[1]
 			#print(x_vel, y_vel)
 			velocity_mag = (np.sum(np.array(self._p.getBaseVelocity(self.mass)[0])[0:2])**2)**(1/2)
+			obs = [x,y,x_vel, y_vel]
+			if self.use_object:
+				obj_pos = self._p.getBasePositionAndOrientation(self.object)[0]
+				obs_x, obs_y = obj_pos[0], obj_pos[1]
+				velocity_obs = self._p.getBaseVelocity(self.object)[0]
+				x_vel_obj, y_vel_obj = velocity_obs[0], velocity_obs[1]
 
-			obs = np.array([x,y,x_vel, y_vel])
-			achieved_goal = np.array([x,y])
+				obs += [obs_x, obs_y, x_vel_obj, y_vel_obj]
+				achieved_goal = np.array([obs_x, obs_y])
+			else: # ag is the position of our controlled point mass
+				achieved_goal = np.array([x,y])
+
 			goal = np.array([self.goal_x,self.goal_y])
 			return {
-	            'observation': obs.copy().astype('float32'),
+	            'observation': np.array(obs).copy().astype('float32'),
 	            'achieved_goal': achieved_goal.copy().astype('float32'),
 	            'desired_goal':  goal.copy().astype('float32'),
             }
@@ -157,20 +207,26 @@ class pointMassEnv(gym.GoalEnv):
 			for i in range(0,10):
 				self._p.stepSimulation()
 
+
 			obs = self.calc_state()
+			
 			r = self.compute_reward(obs['achieved_goal'], obs['desired_goal'])
 
 			current_distance = self.calc_target_distance(current_pos, [self.goal_x, self.goal_y])
+
 			if self.movable_goal:
 				if current_distance < 0.5:
 					self.reset_goal_pos()
 
 			if self.roving_goal:
 				if self.global_step % 60 == 0:
+
 					self.reset_goal_pos()
 
 			self.global_step += 1
-
+			
+			
+			
 			return obs, r, False, {}
 
 
@@ -192,12 +248,17 @@ class pointMassEnv(gym.GoalEnv):
 				visualShapeId = 2
 				colSphereId = self._p.createCollisionShape(p.GEOM_SPHERE,radius=sphereRadius)
 				self.mass = self._p.createMultiBody(mass,colSphereId,visualShapeId,[0,0,0.4])
-				self.goal = self._p.createMultiBody(mass,colSphereId,visualShapeId,[1,1,1.4])
+				#self.goal = self._p.createMultiBody(mass,colSphereId,visualShapeId,[1,1,1.4])
 				# self.mass = [p.loadURDF((os.path.join(urdfRoot,"sphere2.urdf")), 0,0.0,1.0,1.00000,0.707107,0.000000,0.707107)]
 				relativeChildPosition=[0,0,0]
 				relativeChildOrientation=[0,0,0,1]
 				self.mass_cid = self._p.createConstraint(self.mass,-1,-1,-1,self._p.JOINT_FIXED,[0,0,0],[0,0,0],relativeChildPosition,relativeChildOrientation)
-				self.goal_cid = self._p.createConstraint(self.goal,-1,-1,-1,self._p.JOINT_FIXED,[1,1,1.4],[0,0,0],relativeChildPosition,relativeChildOrientation)
+				#self.goal_cid = self._p.createConstraint(self.goal,-1,-1,-1,self._p.JOINT_FIXED,[1,1,1.4],[0,0,0],relativeChildPosition,relativeChildOrientation)
+
+				if self.use_object:
+					colcubeId = self._p.createCollisionShape(p.GEOM_BOX,halfExtents=[0.3,0.3,0.3])
+					self.object = self._p.createMultiBody(0.1,colcubeId ,2,[0,0,0.0])
+					#sself.object = self._p.createMultiBody(mass,colSphereId,visualShapeId,[0.5,0.5,0.4])
 
 				if GUI:
 					self._p.setRealTimeSimulation(1)
@@ -216,14 +277,20 @@ class pointMassEnv(gym.GoalEnv):
 			self._p.resetBasePositionAndOrientation(self.mass, [0, 0,0.4], [0,0,0,1])
 			self.reset_goal_pos()
 			
-
 			# reset mass location
-			x  = self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT)
-			y  = self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT)
+			if self.opposite_goal:
+				x=  -self.goal_x
+				y = -self.goal_y
+			else:
+				x  = self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT),self.TARG_MIN)
+				y  = self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT),self.TARG_MIN) 
 			x_vel = 0#self.np_random.uniform(low=-1, high=1)
 			y_vel = 0#self.np_random.uniform(low=-1, high=1)
 
 			self.initalize_start_pos([x,y],[x_vel,y_vel])
+			if self.use_object:
+				self.reset_object_pos()
+
 			obs = self.calc_state()
 			self.last_target_distance = self.calc_target_distance(obs['achieved_goal'],obs['desired_goal'])
 			#self.last_velocity_distance = self.calc_velocity_distance()
@@ -233,9 +300,15 @@ class pointMassEnv(gym.GoalEnv):
 			yaw = 0
 			self._p.resetDebugVisualizerCamera(distance, yaw, -89, lookat)
 
+			#Instantiate some obstacles.
+			#self.instaniate_obstacles()
 			return obs
 
-			
+		def instaniate_obstacles(self):
+			colcubeId = self._p.createCollisionShape(p.GEOM_BOX,halfExtents=[1.5,1.5,0.6])
+			self.obstacle_center = self._p.createMultiBody(0,colcubeId ,2,[0,0,0.0])
+			self.TARG_MIN = 1.5
+			self.opposite_goal = True
 
 
 		def render(self, mode):
@@ -262,6 +335,14 @@ class pointMassEnv(gym.GoalEnv):
 
 
 
+# a version where reward is determined by the obstacle. 
+# need a sub class so we can load it as a openai gym env.
+class pointMassEnvObject(pointMassEnv):
+    def __init__(self,
+                 render=False,
+                 use_object = True, sparse = True
+                 ):
+        super().__init__(render = render, use_object = use_object, sparse = sparse)
 
 # env = pointMassEnv()
 
