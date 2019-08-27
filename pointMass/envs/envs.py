@@ -85,13 +85,9 @@ class pointMassEnv(gym.GoalEnv):
 
 		def reset_object_pos(self, pos = None):
 			current_pos = self._p.getBasePositionAndOrientation(self.mass)[0]
-			vector_to_goal = np.array([self.goal_x-current_pos[0], self.goal_y-current_pos[1],0.6])
+			vector_to_goal = np.array([self.goal_x-current_pos[0], self.goal_y-current_pos[1],0])
 
-			pos = np.array(current_pos)+vector_to_goal/2+(np.random.rand(3)*1)-0.5
-
-			# shift it a little if too close to the goal
-			while self.calc_target_distance(pos[0:2], [self.goal_x, self.goal_y]) < 1:
-				pos = pos + (np.random.rand(3)*1)-0.5
+			pos = np.array(current_pos)+vector_to_goal*3/4#(np.random.rand(3)*2)-1
 
 			
 			if pos is None: 
@@ -99,7 +95,7 @@ class pointMassEnv(gym.GoalEnv):
 						self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT), self.TARG_MIN)]
 
 			#self.goal_velocity = self.np_random.uniform(low=0, high=3)
-			self._p.resetBasePositionAndOrientation(self.object, [pos[0], pos[1],0.4], [0,0,0,1])
+			self._p.resetBasePositionAndOrientation(self.object, [pos[0], pos[1],0.05], [0,0,0,1])
 
 
 
@@ -201,20 +197,17 @@ class pointMassEnv(gym.GoalEnv):
 
 
 		def step(self, action):
-
-			action = action *0.1# put it to the correct scale
+			print(action)
+			action = action * 0.006 # put it to the correct scale
 			x_shift, y_shift = action[0], action[1]
 			current_pos = self._p.getBasePositionAndOrientation(self.mass)[0]
 			x,y = current_pos[0], current_pos[1]
 			new_x, new_y = np.clip(x+x_shift,-self.TARG_LIMIT*2, self.TARG_LIMIT*2), np.clip(y+y_shift,-self.TARG_LIMIT*2, self.TARG_LIMIT*2)
 			self._p.changeConstraint(self.mass_cid,[new_x, new_y, -0.1], maxForce = 10)
-
-			# force = action*10
-			# print(force)
-			# self._p.applyExternalForce(self.mass, -1, force, current_pos, flags=self._p.WORLD_FRAME)
-			#
+			#print(self._p.getBaseVelocity(self.mass)[0])
+			#print(self._p.getBasePositionAndOrientation(self.mass)[0])
+			
 			for i in range(0,20):
-				#self._p.applyExternalForce(self.mass, -1, force, current_pos, flags=self._p.WORLD_FRAME)
 				self._p.stepSimulation()
 
 
@@ -258,8 +251,7 @@ class pointMassEnv(gym.GoalEnv):
 				visualShapeId = 2
 				colSphereId = self._p.createCollisionShape(p.GEOM_SPHERE,radius=sphereRadius)
 				self.mass = self._p.createMultiBody(mass,colSphereId,visualShapeId,[0,0,0.4])
-				#objects = self._p.loadMJCF("/Users/francisdouglas/bullet3/data/mjcf/sphere.xml")
-				#self.mass = objects[0]
+				
 				# self.mass = [p.loadURDF((os.path.join(urdfRoot,"sphere2.urdf")), 0,0.0,1.0,1.00000,0.707107,0.000000,0.707107)]
 				relativeChildPosition=[0,0,0]
 				relativeChildOrientation=[0,0,0,1]
@@ -276,9 +268,9 @@ class pointMassEnv(gym.GoalEnv):
 					self._p.setRealTimeSimulation(1)
 					
 				if self.use_object:
-					colcubeId = self._p.createCollisionShape(p.GEOM_BOX,halfExtents=[0.4,0.4,0.4])
-					self.object = self._p.createMultiBody(0.1,colcubeId ,2,[0,0,1.5])
-					#self.object = self._p.createMultiBody(mass,colSphereId,visualShapeId,[0.5,0.5,0.4])
+					colcubeId = self._p.createCollisionShape(p.GEOM_BOX,halfExtents=[0.3,0.3,0.3])
+					self.object = self._p.createMultiBody(0.1,colcubeId ,2,[0,0,0.0])
+					#sself.object = self._p.createMultiBody(mass,colSphereId,visualShapeId,[0.5,0.5,0.4])
 
 				if GUI:
 					
@@ -381,67 +373,52 @@ def main(**kwargs):
 	cameraYaw = 35
 	cameraPitch = -35
 
-	env = pointMassEnvObject()
+	env = pointMassEnvObjectDense()
 	env.render(mode = 'human')
 	obs = env.reset()['observation']
 
-	# objects = env._p.loadMJCF("/Users/francisdouglas/bullet3/data/mjcf/sphere.xml")
-	# sphere = objects[0]
-	# env._p.resetBasePositionAndOrientation(sphere, [0, 0, 1], [0, 0, 0, 1])
-	# env._p.changeDynamics(sphere, -1, linearDamping=0.9)
-	# env._p.changeVisualShape(sphere, -1, rgbaColor=[1, 0, 0, 1])
-	forward = 0
-	turn = 0
+	x_shift = 0
+	y_shift = 0 
 
-	forwardVec = [2, 0, 0]
-	cameraDistance = 2
-	cameraYaw = 35
-	cameraPitch = -65
-	steps = 0
-	while steps<3000:
+	while (1):
 
-		spherePos, orn = env._p.getBasePositionAndOrientation(env.mass)
+		
 
-		cameraTargetPosition = spherePos
+		cameraTargetPosition = [obs[0], obs[1]]
 		env._p.resetDebugVisualizerCamera(cameraDistance, cameraYaw, cameraPitch, cameraTargetPosition)
-		camInfo = env._p.getDebugVisualizerCamera()
+		camInfo = p.getDebugVisualizerCamera()
 		camForward = camInfo[5]
 
-		keys = env._p.getKeyboardEvents()
+		keys = p.getKeyboardEvents()
 		for k, v in keys.items():
 
-			if (k == env._p.B3G_RIGHT_ARROW and (v & env._p.KEY_WAS_TRIGGERED)):
-				turn = -3
-			if (k == env._p.B3G_RIGHT_ARROW and (v & env._p.KEY_WAS_RELEASED)):
-				turn = 0
-			if (k == env._p.B3G_LEFT_ARROW and (v & env._p.KEY_WAS_TRIGGERED)):
-				turn = 3
-			if (k == env._p.B3G_LEFT_ARROW and (v & env._p.KEY_WAS_RELEASED)):
-				turn = 0
+			if (k == p.B3G_RIGHT_ARROW and (v & p.KEY_WAS_TRIGGERED)):
+				if x_shift < 0:
+					x_shift = 0
+				x_shift  += 0.5
+			# if (k == p.B3G_RIGHT_ARROW and (v & p.KEY_WAS_RELEASED)):
+			# 	left_right += 0.2
+			if (k == p.B3G_LEFT_ARROW and (v & p.KEY_WAS_TRIGGERED)):
+				if x_shift > 0:
+					x_shift = 0
+				x_shift -= 0.5
+			# if (k == p.B3G_LEFT_ARROW and (v & p.KEY_WAS_RELEASED)):
+			# 	left_right  0.2
 
-			if (k == env._p.B3G_UP_ARROW and (v & env._p.KEY_WAS_TRIGGERED)):
-				forward = 0.6
-			if (k == env._p.B3G_UP_ARROW and (v & env._p.KEY_WAS_RELEASED)):
-				forward = 0
-			if (k == env._p.B3G_DOWN_ARROW and (v & env._p.KEY_WAS_TRIGGERED)):
-				forward = -0.6
-			if (k == env._p.B3G_DOWN_ARROW and (v & env._p.KEY_WAS_RELEASED)):
-				forward = 0
+			if (k == p.B3G_UP_ARROW and (v & p.KEY_WAS_TRIGGERED)):
+				if y_shift < 0:
+					y_shift = 0
+				y_shift += 0.5
+			# if (k == p.B3G_UP_ARROW and (v & p.KEY_WAS_RELEASED)):
+			# 	forward = 0
+			if (k == p.B3G_DOWN_ARROW and (v & p.KEY_WAS_TRIGGERED)):
+				if y_shift > 0:
+					y_shift = 0
+				y_shift -= 0.5
+			# if (k == p.B3G_DOWN_ARROW and (v & p.KEY_WAS_RELEASED)):
 
-
-		force = [forward * camForward[0], forward * camForward[1], 0]
-		cameraYaw = cameraYaw + turn
-
-		# if (forward):
-		# 	env._p.applyExternalForce(sphere, -1, force, spherePos, flags=env._p.WORLD_FRAME)
-		#
-		# env._p.stepSimulation()
-		time.sleep(5. / 240.)
-
-		env.step(np.array(force))
-		steps += 1
 		
-		
+		env.step(np.array([x_shift, y_shift]))
 
 if __name__ == "__main__":
     main()
