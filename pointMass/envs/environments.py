@@ -8,6 +8,7 @@ import time
 from pybullet_utils import bullet_client
 urdfRoot=pybullet_data.getDataPath()
 import gym.spaces as spaces
+import math
 
 GUI = False
 class pointMassEnv(gym.GoalEnv):
@@ -84,35 +85,41 @@ class pointMassEnv(gym.GoalEnv):
 				self._p.changeConstraint(self.goal_cid,[self.goal_x, self.goal_y,0.1], maxForce = 100)
 
 		def reset_object_pos(self, pos = None):
-			current_pos = self._p.getBasePositionAndOrientation(self.mass)[0]
-			vector_to_goal = np.array([self.goal_x-current_pos[0], self.goal_y-current_pos[1],0.6])
+			if pos == None:
+				current_pos = self._p.getBasePositionAndOrientation(self.mass)[0]
+				vector_to_goal = np.array([self.goal_x-current_pos[0], self.goal_y-current_pos[1],0.6])
 
-			pos = np.array(current_pos)+vector_to_goal/2+(np.random.rand(3)*1)-0.5
+				pos = np.array(current_pos)+vector_to_goal/2+(np.random.rand(3)*1)-0.5
 
-			# shift it a little if too close to the goal
-			while self.calc_target_distance(pos[0:2], [self.goal_x, self.goal_y]) < 1:
-				pos = pos + (np.random.rand(3)*1)-0.5
+				# shift it a little if too close to the goal
+				while self.calc_target_distance(pos[0:2], [self.goal_x, self.goal_y]) < 1:
+					pos = pos + (np.random.rand(3)*1)-0.5
 
-			
-			if pos is None: 
-				pos = [self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT), self.TARG_MIN),
-						self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT), self.TARG_MIN)]
+			#
+			# if pos is None:
+			# 	pos = [self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT), self.TARG_MIN),
+			# 			self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT), self.TARG_MIN)]
 
 			#self.goal_velocity = self.np_random.uniform(low=0, high=3)
 			self._p.resetBasePositionAndOrientation(self.object, [pos[0], pos[1],0.4], [0,0,0,1])
 
 
-
+		def initialize_actor_pos(self,o):
+			x, y, x_vel, y_vel = o[0], o[1], o[2], o[3]
+			self._p.resetBasePositionAndOrientation(self.mass, [x, y, -0.1], [0, 0, 0, 1])
+			self._p.changeConstraint(self.mass_cid, [x, y, -0.1], maxForce=100)
+			self._p.resetBaseVelocity(self.mass, [x_vel, y_vel, 0])
 
 		#TODO change the env initialise start pos to a more general form of the function
 
-
-
-		def initalize_start_pos(self, s_i, v_i):
-			x,y,x_vel,y_vel = s_i[0],s_i[1],v_i[0],v_i[1] 
-			self._p.resetBasePositionAndOrientation(self.mass, [x, y,-0.1], [0,0,0,1])
-			self._p.changeConstraint(self.mass_cid,[x, y,-0.1], maxForce = 100)
-			self._p.resetBaseVelocity(self.mass,[x_vel, y_vel, 0])
+		def initialize_start_pos(self, o):
+			if o.type is dict:
+				o = o['observation']
+			self.initialize_actor_pos(o)
+			if self.use_object:
+				obs_x, obs_y, obs_vel_x, obs_vel_y= o[4], o[5], o[6], o[7]
+				self._p.resetBasePositionAndOrientation(self.object, [obs_x, obs_y, -0.1], [0, 0, 0, 1])
+				self._p.resetBaseVelocity(self.object, [obs_vel_x, obs_vel_y, 0])
 
 
 
@@ -279,6 +286,13 @@ class pointMassEnv(gym.GoalEnv):
 					colcubeId = self._p.createCollisionShape(p.GEOM_BOX,halfExtents=[0.4,0.4,0.4])
 					self.object = self._p.createMultiBody(0.1,colcubeId ,2,[0,0,1.5])
 					#self.object = self._p.createMultiBody(mass,colSphereId,visualShapeId,[0.5,0.5,0.4])
+					colwallId = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.05, 2.5, 0.5])
+					wall = [p.createMultiBody(0, colwallId, 2, [self.TARG_LIMIT*2+0.2, 0, 0.0], p.getQuaternionFromEuler([0, 0, 0]))]
+					wall = [p.createMultiBody(0, colwallId, 2, [-self.TARG_LIMIT*2-0.2, 0, 0.0], p.getQuaternionFromEuler([0, 0, 0]))]
+					wall = [
+						p.createMultiBody(0, colwallId, 2, [0, self.TARG_LIMIT*2+0.2, 0], p.getQuaternionFromEuler([0, 0, math.pi / 2]))]
+					wall = [
+						p.createMultiBody(0, colwallId, 2, [0, -self.TARG_LIMIT*2-0.2, 0], p.getQuaternionFromEuler([0, 0, math.pi / 2]))]
 
 				if GUI:
 					
@@ -307,7 +321,7 @@ class pointMassEnv(gym.GoalEnv):
 			x_vel = 0#self.np_random.uniform(low=-1, high=1)
 			y_vel = 0#self.np_random.uniform(low=-1, high=1)
 
-			self.initalize_start_pos([x,y],[x_vel,y_vel])
+			self.initialize_actor_pos([x,y,x_vel,y_vel])
 			if self.use_object:
 				self.reset_object_pos()
 
@@ -436,7 +450,7 @@ def main(**kwargs):
 		# 	env._p.applyExternalForce(sphere, -1, force, spherePos, flags=env._p.WORLD_FRAME)
 		#
 		# env._p.stepSimulation()
-		time.sleep(5. / 240.)
+		time.sleep(3. / 240.)
 
 		env.step(np.array(force))
 		steps += 1
