@@ -113,7 +113,7 @@ class pointMassEnv(gym.GoalEnv):
 		#TODO change the env initialise start pos to a more general form of the function
 
 		def initialize_start_pos(self, o):
-			if o.type is dict:
+			if type(o) is dict:
 				o = o['observation']
 			self.initialize_actor_pos(o)
 			if self.use_object:
