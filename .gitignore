@@ -3,3 +3,4 @@
 /pointMass/envs/paper_folding.py
 /pointMass/envs/basic_tests.py
 /pointMass/envs/externalTorqueSphere.py
+/pointMass/envs/__pycache__/*
