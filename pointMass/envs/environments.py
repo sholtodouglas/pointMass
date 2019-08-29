@@ -84,7 +84,7 @@ class pointMassEnv(gym.GoalEnv):
 				self._p.resetBasePositionAndOrientation(self.goal, [self.goal_x, self.goal_y,0.1], [0,0,0,1])
 				self._p.changeConstraint(self.goal_cid,[self.goal_x, self.goal_y,0.1], maxForce = 100)
 
-		def reset_object_pos(self, pos = None):
+		def reset_object_pos(self, pos = None, extra_info = None):
 			if pos == None:
 				current_pos = self._p.getBasePositionAndOrientation(self.mass)[0]
 				vector_to_goal = np.array([self.goal_x-current_pos[0], self.goal_y-current_pos[1],0.6])
@@ -94,14 +94,18 @@ class pointMassEnv(gym.GoalEnv):
 				# shift it a little if too close to the goal
 				while self.calc_target_distance(pos[0:2], [self.goal_x, self.goal_y]) < 1:
 					pos = pos + (np.random.rand(3)*1)-0.5
+				pos[2] = 0.4
+				ori = [0,0,0,1]
+				obs_vel_x, obs_vel_y =0,0
+			else:
+				obs_x, obs_y = o[4], o[5]
+				obs_z = 0.4 if extra_info is None else extra_info[0]
+				pos = [obs_x, obs_y, obs_z]
+				ori = [0,0,0,1] if extra_info is None else extra_info[1:5]
+				obs_vel_x, obs_vel_y = o[6], o[7]
 
-			#
-			# if pos is None:
-			# 	pos = [self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT), self.TARG_MIN),
-			# 			self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT), self.TARG_MIN)]
-
-			#self.goal_velocity = self.np_random.uniform(low=0, high=3)
-			self._p.resetBasePositionAndOrientation(self.object, [pos[0], pos[1],0.4], [0,0,0,1])
+			self._p.resetBasePositionAndOrientation(self.object, pos,ori)
+			self._p.resetBaseVelocity(self.object, [obs_vel_x, obs_vel_y, 0])
 
 
 		def initialize_actor_pos(self,o):
@@ -135,8 +139,8 @@ class pointMassEnv(gym.GoalEnv):
 			velocity_mag = (np.sum(np.array(self._p.getBaseVelocity(self.mass)[0])[0:2])**2)**(1/2)
 			obs = [x,y,x_vel, y_vel]
 			if self.use_object:
-				obj_pos = self._p.getBasePositionAndOrientation(self.object)[0]
-				obs_x, obs_y = obj_pos[0], obj_pos[1]
+				obj_pose = self._p.getBasePositionAndOrientation(self.object)
+				obs_x, obs_y = obj_pose[0][0], obj_pose[0][1]
 				velocity_obs = self._p.getBaseVelocity(self.object)[0]
 				x_vel_obj, y_vel_obj = velocity_obs[0], velocity_obs[1]
 
@@ -146,10 +150,12 @@ class pointMassEnv(gym.GoalEnv):
 				achieved_goal = np.array([x,y])
 
 			goal = np.array([self.goal_x,self.goal_y])
+			extra_info = np.array([list([obj_pose[0][2]] + list(obj_pose[1]))]) # z pos of the object, ori quaternion of the object.
 			return {
 	            'observation': np.array(obs).copy().astype('float32'),
 	            'achieved_goal': achieved_goal.copy().astype('float32'),
 	            'desired_goal':  goal.copy().astype('float32'),
+	            'extra_info': np.squeeze(extra_info).astype('float32')
             }
 			
 
