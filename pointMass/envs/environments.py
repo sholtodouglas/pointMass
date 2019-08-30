@@ -85,7 +85,7 @@ class pointMassEnv(gym.GoalEnv):
 				self._p.changeConstraint(self.goal_cid,[self.goal_x, self.goal_y,0.1], maxForce = 100)
 
 		def reset_object_pos(self, o = None, extra_info = None):
-			if o == None:
+			if o is None:
 				current_pos = self._p.getBasePositionAndOrientation(self.mass)[0]
 				vector_to_goal = np.array([self.goal_x-current_pos[0], self.goal_y-current_pos[1],0.6])
 
