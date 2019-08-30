@@ -84,8 +84,8 @@ class pointMassEnv(gym.GoalEnv):
 				self._p.resetBasePositionAndOrientation(self.goal, [self.goal_x, self.goal_y,0.1], [0,0,0,1])
 				self._p.changeConstraint(self.goal_cid,[self.goal_x, self.goal_y,0.1], maxForce = 100)
 
-		def reset_object_pos(self, pos = None, extra_info = None):
-			if pos == None:
+		def reset_object_pos(self, o = None, extra_info = None):
+			if o == None:
 				current_pos = self._p.getBasePositionAndOrientation(self.mass)[0]
 				vector_to_goal = np.array([self.goal_x-current_pos[0], self.goal_y-current_pos[1],0.6])
 
@@ -116,14 +116,12 @@ class pointMassEnv(gym.GoalEnv):
 
 		#TODO change the env initialise start pos to a more general form of the function
 
-		def initialize_start_pos(self, o):
+		def initialize_start_pos(self, o, extra_info = None):
 			if type(o) is dict:
 				o = o['observation']
 			self.initialize_actor_pos(o)
 			if self.use_object:
-				obs_x, obs_y, obs_vel_x, obs_vel_y= o[4], o[5], o[6], o[7]
-				self._p.resetBasePositionAndOrientation(self.object, [obs_x, obs_y, -0.1], [0, 0, 0, 1])
-				self._p.resetBaseVelocity(self.object, [obs_vel_x, obs_vel_y, 0])
+				self.reset_object_pos(o, extra_info)
 
 
 
