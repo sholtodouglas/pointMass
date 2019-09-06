@@ -136,6 +136,9 @@ class pointMassEnv(gym.GoalEnv):
 			#print(x_vel, y_vel)
 			velocity_mag = (np.sum(np.array(self._p.getBaseVelocity(self.mass)[0])[0:2])**2)**(1/2)
 			obs = [x,y,x_vel, y_vel]
+
+			goal = np.array([self.goal_x, self.goal_y])
+
 			if self.use_object:
 				obj_pose = self._p.getBasePositionAndOrientation(self.object)
 				obs_x, obs_y = obj_pose[0][0], obj_pose[0][1]
@@ -144,16 +147,20 @@ class pointMassEnv(gym.GoalEnv):
 
 				obs += [obs_x, obs_y, x_vel_obj, y_vel_obj]
 				achieved_goal = np.array([obs_x, obs_y])
+				extra_info = np.squeeze(np.array(
+					[list([obj_pose[0][2]] + list(obj_pose[1]))])).astype('float32')  # z pos of the object, ori quaternion of the object.
+
 			else: # ag is the position of our controlled point mass
 				achieved_goal = np.array([x,y])
+				extra_info = None
 
-			goal = np.array([self.goal_x,self.goal_y])
-			extra_info = np.array([list([obj_pose[0][2]] + list(obj_pose[1]))]) # z pos of the object, ori quaternion of the object.
+
+
 			return {
 	            'observation': np.array(obs).copy().astype('float32'),
 	            'achieved_goal': achieved_goal.copy().astype('float32'),
 	            'desired_goal':  goal.copy().astype('float32'),
-	            'extra_info': np.squeeze(extra_info).astype('float32')
+	            'extra_info': extra_info
             }
 			
 
