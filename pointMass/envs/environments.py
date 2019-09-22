@@ -11,6 +11,12 @@ import gym.spaces as spaces
 import math
 
 GUI = False
+viewMatrix = p.computeViewMatrixFromYawPitchRoll(cameraTargetPosition = [0,0,0], distance = 6, yaw = 0, pitch = -90, roll = 0, upAxisIndex = 2)
+
+
+projectionMatrix = p.computeProjectionMatrixFOV(fov = 50,aspect = 1,nearVal = 0.01,farVal = 10)
+
+
 class pointMassEnv(gym.GoalEnv):
 
 
@@ -49,6 +55,7 @@ class pointMassEnv(gym.GoalEnv):
 			self._seed()
 			self.global_step = 0
 			self.opposite_goal = False
+
 			if sparse:
 				self.set_sparse_reward()
 			
@@ -84,15 +91,20 @@ class pointMassEnv(gym.GoalEnv):
 				self._p.resetBasePositionAndOrientation(self.goal, [self.goal_x, self.goal_y,0.1], [0,0,0,1])
 				self._p.changeConstraint(self.goal_cid,[self.goal_x, self.goal_y,0.1], maxForce = 100)
 
-		def reset_object_pos(self, o = None, extra_info = None):
+		def reset_object_pos(self, o = None, extra_info = None, curric = False):
 			if o is None:
 				current_pos = self._p.getBasePositionAndOrientation(self.mass)[0]
-				vector_to_goal = np.array([self.goal_x-current_pos[0], self.goal_y-current_pos[1],0.6])
+				if curric == True:
 
-				pos = np.array(current_pos)+vector_to_goal/2+(np.random.rand(3)*1)-0.5
+					vector_to_goal = np.array([self.goal_x-current_pos[0], self.goal_y-current_pos[1],0.6])
 
-				# shift it a little if too close to the goal
+					pos = np.array(current_pos)+vector_to_goal/2+(np.random.rand(3)*1)-0.5
+
+					# shift it a little if too close to the goal
+				pos = np.random.rand(3)*4-2
 				while self.calc_target_distance(pos[0:2], [self.goal_x, self.goal_y]) < 1:
+					pos = pos + (np.random.rand(3)*1)-0.5
+				while self.calc_target_distance(pos[0:2], [current_pos[0], current_pos[1]]) < 1:
 					pos = pos + (np.random.rand(3)*1)-0.5
 				pos[2] = 0.4
 				ori = [0,0,0,1]
@@ -155,13 +167,21 @@ class pointMassEnv(gym.GoalEnv):
 				extra_info = None
 
 
-
-			return {
+			return_dict= {
 	            'observation': np.array(obs).copy().astype('float32'),
 	            'achieved_goal': achieved_goal.copy().astype('float32'),
 	            'desired_goal':  goal.copy().astype('float32'),
 	            'extra_info': extra_info
             }
+
+			if self.isRender:
+				img = p.getCameraImage(48, 48, viewMatrix, projectionMatrix, shadow=0,
+									   flags=p.ER_NO_SEGMENTATION_MASK, renderer=p.ER_BULLET_HARDWARE_OPENGL)
+				return_dict['image'] = img[2]
+
+
+
+			return return_dict
 			
 
 		#TODO replace with cleaner code
@@ -211,9 +231,9 @@ class pointMassEnv(gym.GoalEnv):
 
 		def compute_reward_sparse(self, achieved_goal, desired_goal, info = None):
 			current_distance = self.calc_target_distance(achieved_goal, desired_goal)
-			reward = 0 
+			reward = -1
 			if current_distance < 0.5:
-				reward = 10
+				reward = 0
 
 			return reward
 
@@ -224,6 +244,7 @@ class pointMassEnv(gym.GoalEnv):
 			x_shift, y_shift = action[0], action[1]
 			current_pos = self._p.getBasePositionAndOrientation(self.mass)[0]
 			x,y = current_pos[0], current_pos[1]
+
 			new_x, new_y = np.clip(x+x_shift,-self.TARG_LIMIT*2, self.TARG_LIMIT*2), np.clip(y+y_shift,-self.TARG_LIMIT*2, self.TARG_LIMIT*2)
 			self._p.changeConstraint(self.mass_cid,[new_x, new_y, -0.1], maxForce = 10)
 
@@ -237,7 +258,7 @@ class pointMassEnv(gym.GoalEnv):
 
 
 			obs = self.calc_state()
-			
+
 			r = self.compute_reward(obs['achieved_goal'], obs['desired_goal'])
 
 			current_distance = self.calc_target_distance(current_pos, [self.goal_x, self.goal_y])
@@ -252,11 +273,10 @@ class pointMassEnv(gym.GoalEnv):
 					self.reset_goal_pos()
 
 			self.global_step += 1
-			
 
-			
+
+
 			return obs, r, False, {}
-
 
 		def reset(self):
 			#self._p.resetSimulation()
@@ -271,7 +291,7 @@ class pointMassEnv(gym.GoalEnv):
 
 				self.physics_client_active = 1
 
-				sphereRadius = 0.1
+				sphereRadius = 0.25
 				mass = 1
 				visualShapeId = 2
 				colSphereId = self._p.createCollisionShape(p.GEOM_SPHERE,radius=sphereRadius)
@@ -319,7 +339,7 @@ class pointMassEnv(gym.GoalEnv):
 			
 
 
-			self._p.resetBasePositionAndOrientation(self.mass, [0, 0,0.4], [0,0,0,1])
+			self._p.resetBasePositionAndOrientation(self.mass, [0, 0,0.6], [0,0,0,1])
 			self.reset_goal_pos()
 			
 			# reset mass location
