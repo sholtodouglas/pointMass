@@ -55,6 +55,7 @@ class pointMassEnv(gym.GoalEnv):
 			self._seed()
 			self.global_step = 0
 			self.opposite_goal = False
+			self.show_goal = False
 
 			if sparse:
 				self.set_sparse_reward()
@@ -88,8 +89,9 @@ class pointMassEnv(gym.GoalEnv):
    #                 textSize=2)
 
 			if self.isRender:
-				self._p.resetBasePositionAndOrientation(self.goal, [self.goal_x, self.goal_y,0.1], [0,0,0,1])
-				self._p.changeConstraint(self.goal_cid,[self.goal_x, self.goal_y,0.1], maxForce = 100)
+				if self.show_goal:
+					self._p.resetBasePositionAndOrientation(self.goal, [self.goal_x, self.goal_y,0.1], [0,0,0,1])
+					self._p.changeConstraint(self.goal_cid,[self.goal_x, self.goal_y,0.1], maxForce = 100)
 
 		def reset_object_pos(self, o = None, extra_info = None, curric = False):
 			if o is None:
@@ -177,7 +179,7 @@ class pointMassEnv(gym.GoalEnv):
 			if self.isRender:
 				img = p.getCameraImage(48, 48, viewMatrix, projectionMatrix, shadow=0,
 									   flags=p.ER_NO_SEGMENTATION_MASK, renderer=p.ER_BULLET_HARDWARE_OPENGL)
-				return_dict['image'] = img[2]
+				return_dict['image'] = img[2][:,:,:3]
 
 
 
@@ -261,10 +263,11 @@ class pointMassEnv(gym.GoalEnv):
 
 			r = self.compute_reward(obs['achieved_goal'], obs['desired_goal'])
 
-			current_distance = self.calc_target_distance(current_pos, [self.goal_x, self.goal_y])
+			current_distance = self.calc_target_distance(obs['achieved_goal'], [self.goal_x, self.goal_y])
 
 			if self.movable_goal:
-				if current_distance < 0.5:
+
+				if current_distance < 0.6:
 					self.reset_goal_pos()
 
 			if self.roving_goal:
@@ -302,16 +305,17 @@ class pointMassEnv(gym.GoalEnv):
 				relativeChildPosition=[0,0,0]
 				relativeChildOrientation=[0,0,0,1]
 				self.mass_cid = self._p.createConstraint(self.mass,-1,-1,-1,self._p.JOINT_FIXED,[0,0,0],[0,0,0],relativeChildPosition,relativeChildOrientation)
-				
+
 
 
 				if self.isRender:
-					self.goal = self._p.createMultiBody(mass,colSphereId,visualShapeId,[1,1,1.4])
-					collisionFilterGroup = 0
-					collisionFilterMask = 0
-					self._p.setCollisionFilterGroupMask(self.goal, -1, collisionFilterGroup, collisionFilterMask)
-					self.goal_cid = self._p.createConstraint(self.goal,-1,-1,-1,self._p.JOINT_FIXED,[1,1,1.4],[0,0,0],relativeChildPosition,relativeChildOrientation)
-					self._p.setRealTimeSimulation(1)
+					if self.show_goal:
+						self.goal = self._p.createMultiBody(mass,colSphereId,visualShapeId,[1,1,1.4])
+						collisionFilterGroup = 0
+						collisionFilterMask = 0
+						self._p.setCollisionFilterGroupMask(self.goal, -1, collisionFilterGroup, collisionFilterMask)
+						self.goal_cid = self._p.createConstraint(self.goal,-1,-1,-1,self._p.JOINT_FIXED,[1,1,1.4],[0,0,0],relativeChildPosition,relativeChildOrientation)
+					#self._p.setRealTimeSimulation(1)
 					
 				if self.use_object:
 					colcubeId = self._p.createCollisionShape(p.GEOM_BOX,halfExtents=[0.4,0.4,0.4])
@@ -332,8 +336,17 @@ class pointMassEnv(gym.GoalEnv):
 					self.y_shift= self._p.addUserDebugParameter("Y", -ACTION_LIMIT, ACTION_LIMIT, 0.0)
 
 				self._p.configureDebugVisualizer(p.COV_ENABLE_GUI,GUI)
-				self._p.loadSDF(os.path.join(urdfRoot,"plane_stadium.sdf"))
+
 				self._p.setGravity(0,0,-10)
+				lookat = [0, 0, 0.1]
+				distance = 7
+				yaw = 0
+				self._p.resetDebugVisualizerCamera(distance, yaw, -89, lookat)
+				colcubeId = self._p.createCollisionShape(p.GEOM_BOX, halfExtents=[5, 5, 0.1])
+				visplaneId = self._p.createVisualShape(p.GEOM_BOX, halfExtents=[5, 5, 0.1],rgbaColor=[1,1,1,1])
+				plane = self._p.createMultiBody(0, colcubeId, visplaneId, [0, 0, -0.2])
+
+				#self._p.loadSDF(os.path.join(urdfRoot, "plane_stadium.sdf"))
 
 				
 			
@@ -360,10 +373,8 @@ class pointMassEnv(gym.GoalEnv):
 			self.last_target_distance = self.calc_target_distance(obs['achieved_goal'],obs['desired_goal'])
 			#self.last_velocity_distance = self.calc_velocity_distance()
 
-			lookat = [0,0,0.1]
-			distance = 7
-			yaw = 0
-			self._p.resetDebugVisualizerCamera(distance, yaw, -89, lookat)
+
+
 
 			#Instantiate some obstacles.
 			#self.instaniate_obstacles()
