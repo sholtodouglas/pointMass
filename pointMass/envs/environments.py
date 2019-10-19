@@ -9,6 +9,7 @@ from pybullet_utils import bullet_client
 urdfRoot=pybullet_data.getDataPath()
 import gym.spaces as spaces
 import math
+import tensorflow as tf
 
 GUI = False
 viewMatrix = p.computeViewMatrixFromYawPitchRoll(cameraTargetPosition = [0,0,0], distance = 6, yaw = 0, pitch = -90, roll = 0, upAxisIndex = 2)
@@ -57,8 +58,17 @@ class pointMassEnv(gym.GoalEnv):
 			self.opposite_goal = False
 			self.show_goal = False
 
+			self.state_representation = None
+
+
 			if sparse:
 				self.set_sparse_reward()
+
+		def set_state_representation(self, autoencoder):
+			self.state_representation = autoencoder
+			if self.state_representation is not None:
+				self.episodes = np.load('collected_data/120000HER2_pointMassObject-v0_Hidden_128l_2episodes.npz', allow_pickle=True)[
+					'episodes']
 			
 
 		def crop(self, num, lim):
@@ -71,7 +81,13 @@ class pointMassEnv(gym.GoalEnv):
 
 		def reset_goal_pos(self, goal = None):
 			
-
+			if self.state_representation:
+				random_ep = np.random.randint(0, len(self.episodes))
+				#random_frame = np.random.randint(0, len(self.episodes[random_ep]))
+				self.desired_frame = self.episodes[random_ep][-1][0]
+				self.desired_state = self.desired_frame['observation']
+				goal = self.desired_frame['achieved_goal']
+				print('set desired')
 			if goal is None: 
 				self.goal_x  = self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT), self.TARG_MIN)
 				self.goal_y  = self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT), self.TARG_MIN)
@@ -168,6 +184,9 @@ class pointMassEnv(gym.GoalEnv):
 				achieved_goal = np.array([x,y])
 				extra_info = None
 
+			# if self.state_representation:
+			# 	obs = np.squeeze(self.state_representation(np.expand_dims(obs,0))[0].numpy())
+
 
 			return_dict= {
 	            'observation': np.array(obs).copy().astype('float32'),
@@ -211,12 +230,11 @@ class pointMassEnv(gym.GoalEnv):
 		def compute_reward(self, achieved_goal, desired_goal, info = None):
 			
 			# reward given if new pos is closer than old
+
 			current_distance = self.calc_target_distance(achieved_goal, desired_goal)
 
 			position_reward = -1000*(current_distance - self.last_target_distance)
 			self.last_target_distance = current_distance
-			
-
 
 			# velocity_diff = self.calc_velocity_distance()
 			# velocity_reward = -100*(velocity_diff - self.last_velocity_distance)
@@ -225,6 +243,9 @@ class pointMassEnv(gym.GoalEnv):
 
 			#print('Vreward', velocity_reward)
 
+			if self.state_representation is not None:
+				position_reward = -tf.reduce_mean(tf.losses.MAE(self.state_representation(np.expand_dims(self.calc_state()['observation'],0))[0], self.state_representation(np.expand_dims(self.desired_state,0))[0]))
+
 			return position_reward#+velocity_reward
 
 		def set_sparse_reward(self):
@@ -232,6 +253,9 @@ class pointMassEnv(gym.GoalEnv):
 			self.compute_reward = self.compute_reward_sparse
 
 		def compute_reward_sparse(self, achieved_goal, desired_goal, info = None):
+
+			# 	print(reward)
+			# 	return reward
 			current_distance = self.calc_target_distance(achieved_goal, desired_goal)
 			reward = -1
 			if current_distance < 0.5:
@@ -277,9 +301,8 @@ class pointMassEnv(gym.GoalEnv):
 
 			self.global_step += 1
 
-
-
-			return obs, r, False, {}
+			success = 0 if self.compute_reward_sparse(obs['achieved_goal'], obs['desired_goal']) < 0 else 1  # assuming negative rewards
+			return obs, r, False, {'is_success': success}
 
 		def reset(self):
 			#self._p.resetSimulation()
@@ -294,7 +317,7 @@ class pointMassEnv(gym.GoalEnv):
 
 				self.physics_client_active = 1
 
-				sphereRadius = 0.25
+				sphereRadius = 0.1
 				mass = 1
 				visualShapeId = 2
 				colSphereId = self._p.createCollisionShape(p.GEOM_SPHERE,radius=sphereRadius)
@@ -416,7 +439,7 @@ class pointMassEnv(gym.GoalEnv):
 class pointMassEnvObject(pointMassEnv):
     def __init__(self,
                  render=False,
-                 use_object = True, sparse = True, TARG_LIMIT = 1.3
+                 use_object = True, sparse = False, TARG_LIMIT = 1.3
                  ):
         super().__init__(render = render, use_object = use_object, sparse = sparse, TARG_LIMIT = TARG_LIMIT)
 
