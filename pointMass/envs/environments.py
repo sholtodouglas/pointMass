@@ -56,7 +56,7 @@ class pointMassEnv(gym.GoalEnv):
 			self._seed()
 			self.global_step = 0
 			self.opposite_goal = False
-			self.show_goal = False
+			self.show_goal = True
 
 			self.state_representation = None
 
