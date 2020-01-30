@@ -190,7 +190,7 @@ class pointMassEnv(gym.GoalEnv):
 				self.sub_goals = []
 				self.sub_goal_cids = []
 				print('initing')
-				sphereRadius = 0.3
+				sphereRadius = 0.15
 				mass = 1
 				colSphereId = self._p.createCollisionShape(p.GEOM_SPHERE, radius=sphereRadius)
 				relativeChildPosition = [0, 0, 0]
@@ -213,7 +213,7 @@ class pointMassEnv(gym.GoalEnv):
 					collisionFilterMask = 0
 					self._p.setCollisionFilterGroupMask(self.sub_goals[g], -1, collisionFilterGroup, collisionFilterMask)
 					self.sub_goal_cids.append(
-						self._p.createConstraint(self.sub_goals[g], -1, -1, -1, self._p.JOINT_FIXED, [sub_goal[index], sub_goal[index + 1], 0.1], [0, 0, 0],
+						self._p.createConstraint(self.sub_goals[g], -1, -1, -1, self._p.JOINT_FIXED, [sub_goal[index], sub_goal[index + 1], 0.1], [0, 0, 0.1],
 												 relativeChildPosition, relativeChildOrientation))
 					index +=1
 
