@@ -31,6 +31,7 @@ class pointMassEnv(gym.GoalEnv):
 
 			action_dim = 2
 			obs_dim = 4
+			self.ENVIRONMENT_BOUNDS = 2.5# LENGTH 6
 
 			
 			obs_dim += 4*num_objects # pos and vel of the other pm that we are knocking around.
@@ -41,10 +42,14 @@ class pointMassEnv(gym.GoalEnv):
 			self.action_space = spaces.Box(-high, high)
 			high_obs = np.inf * np.ones([obs_dim])
 			high_goal = np.inf * np.ones([goal_dim])
+
+
 			self.observation_space = spaces.Dict(dict(
 	            desired_goal=spaces.Box(-high_goal, high_goal),
 	            achieved_goal=spaces.Box(-high_goal, high_goal),
 	            observation=spaces.Box(-high_obs, high_obs),
+				controllable_achieved_goal = spaces.Box( -self.ENVIRONMENT_BOUNDS*np.ones([action_dim]),  self.ENVIRONMENT_BOUNDS*np.ones([action_dim])),
+				full_positional_state = spaces.Box( -self.ENVIRONMENT_BOUNDS*np.ones([action_dim+2*self.num_objects]),  self.ENVIRONMENT_BOUNDS*np.ones([action_dim+2*self.num_objects]))
         	))
 
 			
@@ -62,7 +67,7 @@ class pointMassEnv(gym.GoalEnv):
 			self.objects = []
 			self.num_objects = num_objects
 			self.state_representation = None
-			
+			self.sub_goals = None
 
 
 			if sparse:
@@ -176,6 +181,54 @@ class pointMassEnv(gym.GoalEnv):
 
 
 
+		def visualise_sub_goal(self, sub_goal, lower_achieved_whole_state):
+
+			# in the sub_goal case we either only  have the positional info, or we have the full state positional info.
+			print(sub_goal)
+			index = 0
+			if self.sub_goals is None:
+				self.sub_goals = []
+				self.sub_goal_cids = []
+				print('initing')
+				sphereRadius = 0.3
+				mass = 1
+				colSphereId = self._p.createCollisionShape(p.GEOM_SPHERE, radius=sphereRadius)
+				relativeChildPosition = [0, 0, 0]
+				relativeChildOrientation = [0, 0, 0, 1]
+				alpha = 0.5
+				colors = [[212/250,175/250,55/250,alpha], [0,1,0,alpha], [0,0,1,alpha]]
+
+
+				for g in range(0, len(sub_goal)//2):
+					if g == 0:
+						# the sphere
+						visId = p.createVisualShape(p.GEOM_SPHERE, radius = sphereRadius,
+														 rgbaColor=colors[g])
+					else:
+						visId = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.35,0.35,0.35],
+														 rgbaColor=colors[g])
+
+					self.sub_goals.append(self._p.createMultiBody(mass, colSphereId, visId, [sub_goal[index], sub_goal[index + 1], 0.1]))
+					collisionFilterGroup = 0
+					collisionFilterMask = 0
+					self._p.setCollisionFilterGroupMask(self.sub_goals[g], -1, collisionFilterGroup, collisionFilterMask)
+					self.sub_goal_cids.append(
+						self._p.createConstraint(self.sub_goals[g], -1, -1, -1, self._p.JOINT_FIXED, [sub_goal[index], sub_goal[index + 1], 0.1], [0, 0, 0],
+												 relativeChildPosition, relativeChildOrientation))
+					index +=1
+
+
+			else:
+				print('moving')
+
+				for g in range(0, len(sub_goal)//2):
+					self._p.resetBasePositionAndOrientation(self.sub_goals[g], [sub_goal[index], sub_goal[index + 1], 0.1],
+															[0, 0, 0, 1])
+					self._p.changeConstraint(self.sub_goal_cids[g], [sub_goal[index], sub_goal[index + 1], 0.1], maxForce=100)
+					index += 1
+
+
+
 			
 		def calc_state(self):
 
@@ -216,7 +269,9 @@ class pointMassEnv(gym.GoalEnv):
 	            'observation': np.array(obs).copy().astype('float32'),
 	            'achieved_goal': np.array(achieved_goal).copy().astype('float32'),
 	            'desired_goal':  self.goal.copy().astype('float32'),
-	            'extra_info': extra_info
+	            'extra_info': extra_info,
+				'controllable_achieved_goal': np.array([x,y]).copy().astype('float32'), # just the x,y pos of the pointmass, the controllable aspects
+				'full_positional_state': np.array([x,y] + achieved_goal).astype('float32')
             }
 
 			if self.isRender:
@@ -229,11 +284,8 @@ class pointMassEnv(gym.GoalEnv):
 			return return_dict
 			
 
-		#TODO replace with cleaner code
 		def calc_target_distance(self, achieved_goal, desired_goal):
-			
 			distance = np.sum(abs(achieved_goal - desired_goal))
-
 			return distance
 
 		# def calc_velocity_distance(self):
@@ -339,7 +391,7 @@ class pointMassEnv(gym.GoalEnv):
 
 				self.physics_client_active = 1
 
-				sphereRadius = 0.1
+				sphereRadius = 0.2
 				mass = 1
 				visualShapeId = 2
 				colSphereId = self._p.createCollisionShape(p.GEOM_SPHERE,radius=sphereRadius)
@@ -351,14 +403,18 @@ class pointMassEnv(gym.GoalEnv):
 				relativeChildOrientation=[0,0,0,1]
 				self.mass_cid = self._p.createConstraint(self.mass,-1,-1,-1,self._p.JOINT_FIXED,[0,0,0],[0,0,0],relativeChildPosition,relativeChildOrientation)
 
-
-
+				alpha = 1
+				colors = [[0, 1, 0, alpha], [0, 0, 1, alpha]]
 				if self.isRender:
 					if self.show_goal:
 						self.goals = []
 						self.goal_cids = []
+
+
 						for g in range(0,self.num_goals):
-							self.goals.append(self._p.createMultiBody(mass,colSphereId,visualShapeId,[1,1,1.4]))
+							visId = p.createVisualShape(p.GEOM_SPHERE, radius = sphereRadius,
+														rgbaColor=colors[g])
+							self.goals.append(self._p.createMultiBody(mass,colSphereId,visId,[1,1,1.4]))
 							collisionFilterGroup = 0
 							collisionFilterMask = 0
 							self._p.setCollisionFilterGroupMask(self.goals[g], -1, collisionFilterGroup, collisionFilterMask)
@@ -366,20 +422,26 @@ class pointMassEnv(gym.GoalEnv):
 					#self._p.setRealTimeSimulation(1)
 					
 				if self.num_objects > 0:
-					colcubeId = self._p.createCollisionShape(p.GEOM_BOX,halfExtents=[0.25,0.25,0.25])
+
+
+
+					colcubeId = self._p.createCollisionShape(p.GEOM_BOX,halfExtents=[0.35,0.35,0.35])
 					for i in range(0,self.num_objects):
-						self.objects.append(self._p.createMultiBody(0.1,colcubeId ,2,[0,0,1.5]))
+						visId = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.35, 0.35, 0.35],
+													rgbaColor=colors[i])
+						self.objects.append(self._p.createMultiBody(0.1,colcubeId ,visId,[0,0,1.5]))
 
 
 
 					#self.object = self._p.createMultiBody(mass,colSphereId,visualShapeId,[0.5,0.5,0.4])
 					colwallId = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.05, 2.5, 0.5])
-					wall = [p.createMultiBody(0, colwallId, 2, [self.TARG_LIMIT*2+0.2, 0, 0.0], p.getQuaternionFromEuler([0, 0, 0]))]
-					wall = [p.createMultiBody(0, colwallId, 2, [-self.TARG_LIMIT*2-0.2, 0, 0.0], p.getQuaternionFromEuler([0, 0, 0]))]
+					wallvisId = 10
+					wall = [p.createMultiBody(0, colwallId, 10, [self.TARG_LIMIT*2+0.2, 0, 0.0], p.getQuaternionFromEuler([0, 0, 0]))]
+					wall = [p.createMultiBody(0, colwallId, 10, [-self.TARG_LIMIT*2-0.2, 0, 0.0], p.getQuaternionFromEuler([0, 0, 0]))]
 					wall = [
-						p.createMultiBody(0, colwallId, 2, [0, self.TARG_LIMIT*2+0.2, 0], p.getQuaternionFromEuler([0, 0, math.pi / 2]))]
+						p.createMultiBody(0, colwallId, 10, [0, self.TARG_LIMIT*2+0.2, 0], p.getQuaternionFromEuler([0, 0, math.pi / 2]))]
 					wall = [
-						p.createMultiBody(0, colwallId, 2, [0, -self.TARG_LIMIT*2-0.2, 0], p.getQuaternionFromEuler([0, 0, math.pi / 2]))]
+						p.createMultiBody(0, colwallId, 10, [0, -self.TARG_LIMIT*2-0.2, 0], p.getQuaternionFromEuler([0, 0, math.pi / 2]))]
 
 				if GUI:
 					
@@ -516,6 +578,7 @@ def main(**kwargs):
 	while steps<3000:
 
 		spherePos, orn = env._p.getBasePositionAndOrientation(env.mass)
+		print(spherePos)
 
 		cameraTargetPosition = spherePos
 		env._p.resetDebugVisualizerCamera(cameraDistance, cameraYaw, cameraPitch, cameraTargetPosition)
