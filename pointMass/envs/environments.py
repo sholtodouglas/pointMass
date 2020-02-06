@@ -184,7 +184,7 @@ class pointMassEnv(gym.GoalEnv):
 		def visualise_sub_goal(self, sub_goal, lower_achieved_whole_state):
 
 			# in the sub_goal case we either only  have the positional info, or we have the full state positional info.
-			print(sub_goal)
+			#print(sub_goal)
 			index = 0
 			if self.sub_goals is None:
 				self.sub_goals = []
@@ -215,17 +215,17 @@ class pointMassEnv(gym.GoalEnv):
 					self.sub_goal_cids.append(
 						self._p.createConstraint(self.sub_goals[g], -1, -1, -1, self._p.JOINT_FIXED, [sub_goal[index], sub_goal[index + 1], 0.1], [0, 0, 0.1],
 												 relativeChildPosition, relativeChildOrientation))
-					index +=1
+					index +=2
 
 
 			else:
-				print('moving')
+
 
 				for g in range(0, len(sub_goal)//2):
 					self._p.resetBasePositionAndOrientation(self.sub_goals[g], [sub_goal[index], sub_goal[index + 1], 0.1],
 															[0, 0, 0, 1])
 					self._p.changeConstraint(self.sub_goal_cids[g], [sub_goal[index], sub_goal[index + 1], 0.1], maxForce=100)
-					index += 1
+					index += 2
 
 
 
@@ -264,14 +264,17 @@ class pointMassEnv(gym.GoalEnv):
 			# if self.state_representation:
 			# 	obs = np.squeeze(self.state_representation(np.expand_dims(obs,0))[0].numpy())
 
-
+			if self.num_objects == 0:
+				full_positional_state = np.array([x,y])
+			else:
+				full_positional_state = np.array([x,y]+list(achieved_goal))
 			return_dict= {
 	            'observation': np.array(obs).copy().astype('float32'),
 	            'achieved_goal': np.array(achieved_goal).copy().astype('float32'),
 	            'desired_goal':  self.goal.copy().astype('float32'),
 	            'extra_info': extra_info,
 				'controllable_achieved_goal': np.array([x,y]).copy().astype('float32'), # just the x,y pos of the pointmass, the controllable aspects
-				'full_positional_state': np.array([x,y] + achieved_goal).astype('float32')
+				'full_positional_state': full_positional_state.astype('float32')
             }
 
 			if self.isRender:
@@ -578,7 +581,7 @@ def main(**kwargs):
 	while steps<3000:
 
 		spherePos, orn = env._p.getBasePositionAndOrientation(env.mass)
-		print(spherePos)
+		#print(spherePos)
 
 		cameraTargetPosition = spherePos
 		env._p.resetDebugVisualizerCamera(cameraDistance, cameraYaw, cameraPitch, cameraTargetPosition)
@@ -617,7 +620,7 @@ def main(**kwargs):
 		time.sleep(3. / 240.)
 
 		_,r,_,_ = env.step(np.array(force))
-		print(r)
+		#print(r)
 		steps += 1
 		
 		
