@@ -1,5 +1,5 @@
 # pointMass
-pointMass pybullet RL environment for simple experiments
+pointMass pybullet RL environment for simple experiments and algorithm verification.
 
 It is a openAI gym goal based environment, and has modifiable difficulty. The easiest environment is a 2D self navigation task. Further levels of difficulty involve a modifiable number of objects which must be pushed to goal locations. 
 
