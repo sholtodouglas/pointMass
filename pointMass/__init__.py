@@ -11,6 +11,11 @@ register(
 )
 
 register(
+    id='pointMassObjectDuo-v0',
+    entry_point='pointMass.envs:pointMassEnvObjectDuo',
+)
+
+register(
     id='pointMassObjectDense-v0',
     entry_point='pointMass.envs:pointMassEnvObjectDense',
 )
