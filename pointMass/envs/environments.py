@@ -56,7 +56,7 @@ class pointMassEnv(gym.GoalEnv):
 			self.isRender = False
 			self._p = p
 			self.physics_client_active = 0
-			self.movable_goal = False
+			self.movable_goal = True
 			self.roving_goal = False
 			self.TARG_LIMIT = TARG_LIMIT
 			self.TARG_MIN = 0.1
