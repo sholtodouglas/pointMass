@@ -26,13 +26,14 @@ class pointMassEnv(gym.GoalEnv):
 		'video.frames_per_second': 60
 		}
 
-		def __init__(self, render = False, num_objects = 0, sparse = True, TARG_LIMIT = 3):
+		def __init__(self, render = False, num_objects = 0, sparse = True, TARG_LIMIT = 2, sparse_rew_thresh=0.3):
 			self.num_objects = num_objects
 
 			action_dim = 2
 			obs_dim = 4
 			self.ENVIRONMENT_BOUNDS = 2.5# LENGTH 6
-
+			self.sparse_rew_thresh = sparse_rew_thresh
+			self._max_episode_steps = 250
 			
 			obs_dim += 4*num_objects # pos and vel of the other pm that we are knocking around.
 			self.num_goals = max(num_objects,1)
@@ -56,7 +57,7 @@ class pointMassEnv(gym.GoalEnv):
 			self.isRender = False
 			self._p = p
 			self.physics_client_active = 0
-			self.movable_goal = True
+			self.movable_goal = False
 			self.roving_goal = False
 			self.TARG_LIMIT = TARG_LIMIT
 			self.TARG_MIN = 0.1
@@ -181,7 +182,7 @@ class pointMassEnv(gym.GoalEnv):
 
 
 
-		def visualise_sub_goal(self, sub_goal, lower_achieved_whole_state):
+		def visualise_sub_goal(self, sub_goal, sub_goal_state = 'achieved_goal'):
 
 			# in the sub_goal case we either only  have the positional info, or we have the full state positional info.
 			#print(sub_goal)
@@ -197,16 +198,20 @@ class pointMassEnv(gym.GoalEnv):
 				relativeChildOrientation = [0, 0, 0, 1]
 				alpha = 0.5
 				colors = [[212/250,175/250,55/250,alpha], [0,1,0,alpha], [0,0,1,alpha]]
-
+				if sub_goal_state is 'achieved_goal':
+					colors = [ [0, 1, 0, alpha], [0, 0, 1, alpha]]
 
 				for g in range(0, len(sub_goal)//2):
-					if g == 0:
+					if g == 0 and sub_goal_state is not 'achieved_goal': # all other ones include sphere
 						# the sphere
 						visId = p.createVisualShape(p.GEOM_SPHERE, radius = sphereRadius,
 														 rgbaColor=colors[g])
 					else:
+
+
 						visId = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.35,0.35,0.35],
 														 rgbaColor=colors[g])
+
 
 					self.sub_goals.append(self._p.createMultiBody(mass, colSphereId, visId, [sub_goal[index], sub_goal[index + 1], 0.1]))
 					collisionFilterGroup = 0
@@ -330,15 +335,31 @@ class pointMassEnv(gym.GoalEnv):
 
 		def compute_reward_sparse(self, achieved_goal, desired_goal, info = None):
 
-			# 	print(reward)
-			# 	return reward
-			# currently this will 
-			current_distance = self.calc_target_distance(achieved_goal, desired_goal)
-			reward = -1
-			if current_distance < 0.5:
-				reward = 0
+			# I know this should be vectorized but cbf atm - my version doesn't use vector ag and dg. Just need this for baselines
+			# compatability.
+			initially_vectorized = True
+			if len(achieved_goal.shape) == 1:
+				achieved_goal = np.expand_dims(np.array(achieved_goal), axis = 0)
+				desired_goal = np.expand_dims(np.array(desired_goal), axis=0)
+				initially_vectorized = False
 
-			return reward
+
+			reward = np.zeros(len(achieved_goal))
+
+			for i in range(0, len(achieved_goal)):
+				for g in range(0,len(achieved_goal[i])//2):
+					g = g*2 # increments of 2
+					current_distance = self.calc_target_distance(achieved_goal[g:g+2], desired_goal[g:g+2])
+					if current_distance > self.sparse_rew_thresh:
+						# TODO : DECIDE WHAT WE WANT HERE
+						#reward = -1
+						reward[i] -= 1
+
+
+			if not initially_vectorized:
+				return reward[0]
+			else:
+				return reward
 
 
 		def step(self, action):
@@ -348,7 +369,7 @@ class pointMassEnv(gym.GoalEnv):
 			current_pos = self._p.getBasePositionAndOrientation(self.mass)[0]
 			x,y = current_pos[0], current_pos[1]
 
-			new_x, new_y = np.clip(x+x_shift,-self.TARG_LIMIT*2, self.TARG_LIMIT*2), np.clip(y+y_shift,-self.TARG_LIMIT*2, self.TARG_LIMIT*2)
+			new_x, new_y = np.clip(x+x_shift,-self.ENVIRONMENT_BOUNDS, self.ENVIRONMENT_BOUNDS), np.clip(y+y_shift,-self.ENVIRONMENT_BOUNDS, self.ENVIRONMENT_BOUNDS)
 			self._p.changeConstraint(self.mass_cid,[new_x, new_y, -0.1], maxForce = 10)
 
 			# force = action*10
@@ -368,7 +389,7 @@ class pointMassEnv(gym.GoalEnv):
 
 			if self.movable_goal:
 
-				if current_distance < 0.6:
+				if r ==  0:
 					self.reset_goal_pos()
 
 			if self.roving_goal:
@@ -379,7 +400,13 @@ class pointMassEnv(gym.GoalEnv):
 			self.global_step += 1
 
 			success = 0 if self.compute_reward_sparse(obs['achieved_goal'], obs['desired_goal']) < 0 else 1  # assuming negative rewards
-			return obs, r, False, {'is_success': success}
+
+			# this part is only for interoperability with baselines
+			if self.global_step == self._max_episode_steps:
+				done = True
+			else:
+				done = False
+			return obs, r, done, {'is_success': success}
 
 		def reset(self):
 			#self._p.resetSimulation()
@@ -408,20 +435,20 @@ class pointMassEnv(gym.GoalEnv):
 
 				alpha = 1
 				colors = [[0, 1, 0, alpha], [0, 0, 1, alpha]]
-				if self.isRender:
-					if self.show_goal:
-						self.goals = []
-						self.goal_cids = []
+
+				if self.show_goal:
+					self.goals = []
+					self.goal_cids = []
 
 
-						for g in range(0,self.num_goals):
-							visId = p.createVisualShape(p.GEOM_SPHERE, radius = sphereRadius,
-														rgbaColor=colors[g])
-							self.goals.append(self._p.createMultiBody(mass,colSphereId,visId,[1,1,1.4]))
-							collisionFilterGroup = 0
-							collisionFilterMask = 0
-							self._p.setCollisionFilterGroupMask(self.goals[g], -1, collisionFilterGroup, collisionFilterMask)
-							self.goal_cids.append(self._p.createConstraint(self.goals[g],-1,-1,-1,self._p.JOINT_FIXED,[1,1,1.4],[0,0,0],relativeChildPosition,relativeChildOrientation))
+					for g in range(0,self.num_goals):
+						visId = p.createVisualShape(p.GEOM_SPHERE, radius = sphereRadius,
+													rgbaColor=colors[g])
+						self.goals.append(self._p.createMultiBody(mass,colSphereId,visId,[1,1,1.4]))
+						collisionFilterGroup = 0
+						collisionFilterMask = 0
+						self._p.setCollisionFilterGroupMask(self.goals[g], -1, collisionFilterGroup, collisionFilterMask)
+						self.goal_cids.append(self._p.createConstraint(self.goals[g],-1,-1,-1,self._p.JOINT_FIXED,[1,1,1.4],[0,0,0],relativeChildPosition,relativeChildOrientation))
 					#self._p.setRealTimeSimulation(1)
 					
 				if self.num_objects > 0:
@@ -540,9 +567,9 @@ class pointMassEnvObject(pointMassEnv):
 class pointMassEnvObjectDuo(pointMassEnv):
     def __init__(self,
                  render=False,
-                 num_objects = 2, sparse = True, TARG_LIMIT = 1.3
+                 num_objects = 2, sparse = True, TARG_LIMIT = 1.3, sparse_rew_thresh = 0.4 # TODO 6 when collecting examples.
                  ):
-        super().__init__(render = render, num_objects = num_objects, sparse = sparse, TARG_LIMIT = TARG_LIMIT)
+        super().__init__(render = render, num_objects = num_objects, sparse = sparse, TARG_LIMIT = TARG_LIMIT, sparse_rew_thresh=sparse_rew_thresh)
 
 class pointMassEnvObjectDense(pointMassEnv):
     def __init__(self,
@@ -551,7 +578,12 @@ class pointMassEnvObjectDense(pointMassEnv):
                  ):
         super().__init__(render = render, num_objects = num_objects, sparse = sparse, TARG_LIMIT = TARG_LIMIT)
 
-
+class pointMassEnvDense(pointMassEnv):
+    def __init__(self,
+                 render=False,
+                 num_objects = 0, sparse = False, TARG_LIMIT = 1.3
+                 ):
+        super().__init__(render = render, num_objects = num_objects, sparse = sparse, TARG_LIMIT = TARG_LIMIT)
 
 
 
@@ -620,7 +652,7 @@ def main(**kwargs):
 		time.sleep(3. / 240.)
 
 		_,r,_,_ = env.step(np.array(force))
-		#print(r)
+		print(r)
 		steps += 1
 		
 		

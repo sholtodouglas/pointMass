@@ -6,6 +6,11 @@ register(
 )
 
 register(
+    id='pointMassDense-v0',
+    entry_point='pointMass.envs:pointMassEnvDense',
+)
+
+register(
     id='pointMassObject-v0',
     entry_point='pointMass.envs:pointMassEnvObject',
 )
