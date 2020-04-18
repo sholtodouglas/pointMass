@@ -9,7 +9,6 @@ from pybullet_utils import bullet_client
 urdfRoot=pybullet_data.getDataPath()
 import gym.spaces as spaces
 import math
-import tensorflow as tf
 
 GUI = False
 viewMatrix = p.computeViewMatrixFromYawPitchRoll(cameraTargetPosition = [0,0,0], distance = 6, yaw = 0, pitch = -90, roll = 0, upAxisIndex = 2)
@@ -41,8 +40,8 @@ class pointMassEnv(gym.GoalEnv):
 
 			high = np.ones([action_dim])
 			self.action_space = spaces.Box(-high, high)
-			high_obs = np.inf * np.ones([obs_dim])
-			high_goal = np.inf * np.ones([goal_dim])
+			high_obs = self.ENVIRONMENT_BOUNDS * np.ones([obs_dim])
+			high_goal = self.ENVIRONMENT_BOUNDS * np.ones([goal_dim])
 
 
 			self.observation_space = spaces.Dict(dict(
@@ -52,6 +51,7 @@ class pointMassEnv(gym.GoalEnv):
 				controllable_achieved_goal = spaces.Box( -self.ENVIRONMENT_BOUNDS*np.ones([action_dim]),  self.ENVIRONMENT_BOUNDS*np.ones([action_dim])),
 				full_positional_state = spaces.Box( -self.ENVIRONMENT_BOUNDS*np.ones([action_dim+2*self.num_objects]),  self.ENVIRONMENT_BOUNDS*np.ones([action_dim+2*self.num_objects]))
         	))
+
 
 			
 			self.isRender = False
@@ -312,7 +312,7 @@ class pointMassEnv(gym.GoalEnv):
 			
 			# reward given if new pos is closer than old
 
-			current_distance = self.calc_target_distance(achieved_goal, desired_goal)
+			current_distance = np.linalg.norm(achieved_goal - desired_goal, axis=1)
 
 			position_reward = -1000*(current_distance - self.last_target_distance)
 			self.last_target_distance = current_distance
@@ -333,28 +333,20 @@ class pointMassEnv(gym.GoalEnv):
 			print('Environment set to sparse reward')
 			self.compute_reward = self.compute_reward_sparse
 
-		def compute_reward_sparse(self, achieved_goal, desired_goal, info = None):
+		def compute_reward_sparse(self, achieved_goal, desired_goal, info=None):
 
-			# I know this should be vectorized but cbf atm - my version doesn't use vector ag and dg. Just need this for baselines
-			# compatability.
 			initially_vectorized = True
+			dimension = 2
 			if len(achieved_goal.shape) == 1:
-				achieved_goal = np.expand_dims(np.array(achieved_goal), axis = 0)
+				achieved_goal = np.expand_dims(np.array(achieved_goal), axis=0)
 				desired_goal = np.expand_dims(np.array(desired_goal), axis=0)
 				initially_vectorized = False
 
-
 			reward = np.zeros(len(achieved_goal))
-
-			for i in range(0, len(achieved_goal)):
-				for g in range(0,len(achieved_goal[i])//2):
-					g = g*2 # increments of 2
-					current_distance = self.calc_target_distance(achieved_goal[g:g+2], desired_goal[g:g+2])
-					if current_distance > self.sparse_rew_thresh:
-						# TODO : DECIDE WHAT WE WANT HERE
-						#reward = -1
-						reward[i] -= 1
-
+			for g in range(0, len(achieved_goal[0]) // dimension): # piecewise reward
+				g = g * dimension  # increments of 2
+				current_distance = np.linalg.norm(achieved_goal[:, g:g + dimension] - desired_goal[:, g:g + dimension], axis=1)
+				reward += np.where(current_distance > self.sparse_rew_thresh, -1, 0)
 
 			if not initially_vectorized:
 				return reward[0]
@@ -408,120 +400,124 @@ class pointMassEnv(gym.GoalEnv):
 				done = False
 			return obs, r, done, {'is_success': success}
 
-		def reset(self):
-			#self._p.resetSimulation()
-			self.global_step = 0
-			
-			if self.physics_client_active == 0:
-				
-				if self.isRender:
-					self._p = bullet_client.BulletClient(connection_mode=p.GUI)
-				else:
-					self._p = bullet_client.BulletClient(connection_mode=p.DIRECT)
-
-				self.physics_client_active = 1
-
-				sphereRadius = 0.2
-				mass = 1
-				visualShapeId = 2
-				colSphereId = self._p.createCollisionShape(p.GEOM_SPHERE,radius=sphereRadius)
-				self.mass = self._p.createMultiBody(mass,colSphereId,visualShapeId,[0,0,0.4])
-				#objects = self._p.loadMJCF("/Users/francisdouglas/bullet3/data/mjcf/sphere.xml")
-				#self.mass = objects[0]
-				# self.mass = [p.loadURDF((os.path.join(urdfRoot,"sphere2.urdf")), 0,0.0,1.0,1.00000,0.707107,0.000000,0.707107)]
-				relativeChildPosition=[0,0,0]
-				relativeChildOrientation=[0,0,0,1]
-				self.mass_cid = self._p.createConstraint(self.mass,-1,-1,-1,self._p.JOINT_FIXED,[0,0,0],[0,0,0],relativeChildPosition,relativeChildOrientation)
-
-				alpha = 1
-				colors = [[0, 1, 0, alpha], [0, 0, 1, alpha]]
-
-				if self.show_goal:
-					self.goals = []
-					self.goal_cids = []
-
-
-					for g in range(0,self.num_goals):
-						visId = p.createVisualShape(p.GEOM_SPHERE, radius = sphereRadius,
-													rgbaColor=colors[g])
-						self.goals.append(self._p.createMultiBody(mass,colSphereId,visId,[1,1,1.4]))
-						collisionFilterGroup = 0
-						collisionFilterMask = 0
-						self._p.setCollisionFilterGroupMask(self.goals[g], -1, collisionFilterGroup, collisionFilterMask)
-						self.goal_cids.append(self._p.createConstraint(self.goals[g],-1,-1,-1,self._p.JOINT_FIXED,[1,1,1.4],[0,0,0],relativeChildPosition,relativeChildOrientation))
-					#self._p.setRealTimeSimulation(1)
-					
-				if self.num_objects > 0:
-
-
-
-					colcubeId = self._p.createCollisionShape(p.GEOM_BOX,halfExtents=[0.35,0.35,0.35])
-					for i in range(0,self.num_objects):
-						visId = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.35, 0.35, 0.35],
-													rgbaColor=colors[i])
-						self.objects.append(self._p.createMultiBody(0.1,colcubeId ,visId,[0,0,1.5]))
-
-
-
-					#self.object = self._p.createMultiBody(mass,colSphereId,visualShapeId,[0.5,0.5,0.4])
-					colwallId = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.05, 2.5, 0.5])
-					wallvisId = 10
-					wall = [p.createMultiBody(0, colwallId, 10, [self.TARG_LIMIT*2+0.2, 0, 0.0], p.getQuaternionFromEuler([0, 0, 0]))]
-					wall = [p.createMultiBody(0, colwallId, 10, [-self.TARG_LIMIT*2-0.2, 0, 0.0], p.getQuaternionFromEuler([0, 0, 0]))]
-					wall = [
-						p.createMultiBody(0, colwallId, 10, [0, self.TARG_LIMIT*2+0.2, 0], p.getQuaternionFromEuler([0, 0, math.pi / 2]))]
-					wall = [
-						p.createMultiBody(0, colwallId, 10, [0, -self.TARG_LIMIT*2-0.2, 0], p.getQuaternionFromEuler([0, 0, math.pi / 2]))]
-
-				if GUI:
-					
-					ACTION_LIMIT = 1
-					self.x_shift = self._p.addUserDebugParameter("X", -ACTION_LIMIT, ACTION_LIMIT, 0.0)
-					self.y_shift= self._p.addUserDebugParameter("Y", -ACTION_LIMIT, ACTION_LIMIT, 0.0)
-
-				self._p.configureDebugVisualizer(p.COV_ENABLE_GUI,GUI)
-
-				self._p.setGravity(0,0,-10)
-				lookat = [0, 0, 0.1]
-				distance = 7
-				yaw = 0
-				self._p.resetDebugVisualizerCamera(distance, yaw, -89, lookat)
-				colcubeId = self._p.createCollisionShape(p.GEOM_BOX, halfExtents=[5, 5, 0.1])
-				visplaneId = self._p.createVisualShape(p.GEOM_BOX, halfExtents=[5, 5, 0.1],rgbaColor=[1,1,1,1])
-				plane = self._p.createMultiBody(0, colcubeId, visplaneId, [0, 0, -0.2])
-
-				#self._p.loadSDF(os.path.join(urdfRoot, "plane_stadium.sdf"))
-
-				
-			
-
-
-			self._p.resetBasePositionAndOrientation(self.mass, [0, 0,0.6], [0,0,0,1])
-			self.reset_goal_pos()
-			
-			# reset mass location
-			if self.opposite_goal:
-				x=  -self.goal[0]
-				y = -self.goal[1]
+		def reset(self, o = None ):
+			if o is not None:
+				self.initialize_start_pos(o)
 			else:
-				x  = self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT),self.TARG_MIN)
-				y  = self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT),self.TARG_MIN) 
-			x_vel = 0#self.np_random.uniform(low=-1, high=1)
-			y_vel = 0#self.np_random.uniform(low=-1, high=1)
+				#self._p.resetSimulation()
+				self.global_step = 0
 
-			self.initialize_actor_pos([x,y,x_vel,y_vel])
-			if self.num_objects > 0:
-				self.reset_object_pos()
+				if self.physics_client_active == 0:
 
+					if self.isRender:
+						self._p = bullet_client.BulletClient(connection_mode=p.GUI)
+					else:
+						self._p = bullet_client.BulletClient(connection_mode=p.DIRECT)
+
+					self.physics_client_active = 1
+
+					sphereRadius = 0.2
+					mass = 1
+					visualShapeId = 2
+					colSphereId = self._p.createCollisionShape(p.GEOM_SPHERE,radius=sphereRadius)
+					self.mass = self._p.createMultiBody(mass,colSphereId,visualShapeId,[0,0,0.4])
+					#objects = self._p.loadMJCF("/Users/francisdouglas/bullet3/data/mjcf/sphere.xml")
+					#self.mass = objects[0]
+					# self.mass = [p.loadURDF((os.path.join(urdfRoot,"sphere2.urdf")), 0,0.0,1.0,1.00000,0.707107,0.000000,0.707107)]
+					relativeChildPosition=[0,0,0]
+					relativeChildOrientation=[0,0,0,1]
+					self.mass_cid = self._p.createConstraint(self.mass,-1,-1,-1,self._p.JOINT_FIXED,[0,0,0],[0,0,0],relativeChildPosition,relativeChildOrientation)
+
+					alpha = 1
+					colors = [[0, 1, 0, alpha], [0, 0, 1, alpha]]
+
+					if self.show_goal:
+						self.goals = []
+						self.goal_cids = []
+
+
+						for g in range(0,self.num_goals):
+							visId = p.createVisualShape(p.GEOM_SPHERE, radius = sphereRadius,
+														rgbaColor=colors[g])
+							self.goals.append(self._p.createMultiBody(mass,colSphereId,visId,[1,1,1.4]))
+							collisionFilterGroup = 0
+							collisionFilterMask = 0
+							self._p.setCollisionFilterGroupMask(self.goals[g], -1, collisionFilterGroup, collisionFilterMask)
+							self.goal_cids.append(self._p.createConstraint(self.goals[g],-1,-1,-1,self._p.JOINT_FIXED,[1,1,1.4],[0,0,0],relativeChildPosition,relativeChildOrientation))
+						#self._p.setRealTimeSimulation(1)
+
+					if self.num_objects > 0:
+
+
+
+						colcubeId = self._p.createCollisionShape(p.GEOM_BOX,halfExtents=[0.35,0.35,0.35])
+						for i in range(0,self.num_objects):
+							visId = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.35, 0.35, 0.35],
+														rgbaColor=colors[i])
+							self.objects.append(self._p.createMultiBody(0.1,colcubeId ,visId,[0,0,1.5]))
+
+
+
+						#self.object = self._p.createMultiBody(mass,colSphereId,visualShapeId,[0.5,0.5,0.4])
+						colwallId = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.05, 2.5, 0.5])
+						wallvisId = 10
+						wall = [p.createMultiBody(0, colwallId, 10, [self.TARG_LIMIT*2+0.2, 0, 0.0], p.getQuaternionFromEuler([0, 0, 0]))]
+						wall = [p.createMultiBody(0, colwallId, 10, [-self.TARG_LIMIT*2-0.2, 0, 0.0], p.getQuaternionFromEuler([0, 0, 0]))]
+						wall = [
+							p.createMultiBody(0, colwallId, 10, [0, self.TARG_LIMIT*2+0.2, 0], p.getQuaternionFromEuler([0, 0, math.pi / 2]))]
+						wall = [
+							p.createMultiBody(0, colwallId, 10, [0, -self.TARG_LIMIT*2-0.2, 0], p.getQuaternionFromEuler([0, 0, math.pi / 2]))]
+
+					if GUI:
+
+						ACTION_LIMIT = 1
+						self.x_shift = self._p.addUserDebugParameter("X", -ACTION_LIMIT, ACTION_LIMIT, 0.0)
+						self.y_shift= self._p.addUserDebugParameter("Y", -ACTION_LIMIT, ACTION_LIMIT, 0.0)
+
+					self._p.configureDebugVisualizer(p.COV_ENABLE_GUI,GUI)
+
+					self._p.setGravity(0,0,-10)
+					lookat = [0, 0, 0.1]
+					distance = 7
+					yaw = 0
+					self._p.resetDebugVisualizerCamera(distance, yaw, -89, lookat)
+					colcubeId = self._p.createCollisionShape(p.GEOM_BOX, halfExtents=[5, 5, 0.1])
+					visplaneId = self._p.createVisualShape(p.GEOM_BOX, halfExtents=[5, 5, 0.1],rgbaColor=[1,1,1,1])
+					plane = self._p.createMultiBody(0, colcubeId, visplaneId, [0, 0, -0.2])
+
+					#self._p.loadSDF(os.path.join(urdfRoot, "plane_stadium.sdf"))
+
+
+
+
+
+				self._p.resetBasePositionAndOrientation(self.mass, [0, 0,0.6], [0,0,0,1])
+				self.reset_goal_pos()
+
+				# reset mass location
+				if self.opposite_goal:
+					x=  -self.goal[0]
+					y = -self.goal[1]
+				else:
+					x  = self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT),self.TARG_MIN)
+					y  = self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT),self.TARG_MIN)
+				x_vel = 0#self.np_random.uniform(low=-1, high=1)
+				y_vel = 0#self.np_random.uniform(low=-1, high=1)
+
+				self.initialize_actor_pos([x,y,x_vel,y_vel])
+				if self.num_objects > 0:
+					self.reset_object_pos()
+
+
+				#self.last_velocity_distance = self.calc_velocity_distance()
+
+
+
+
+				#Instantiate some obstacles.
+				#self.instaniate_obstacles()
 			obs = self.calc_state()
-			self.last_target_distance = self.calc_target_distance(obs['achieved_goal'],obs['desired_goal'])
-			#self.last_velocity_distance = self.calc_velocity_distance()
-
-
-
-
-			#Instantiate some obstacles.
-			#self.instaniate_obstacles()
+			self.last_target_distance = self.calc_target_distance(obs['achieved_goal'], obs['desired_goal'])
 			return obs
 
 		def instaniate_obstacles(self):
@@ -567,7 +563,7 @@ class pointMassEnvObject(pointMassEnv):
 class pointMassEnvObjectDuo(pointMassEnv):
     def __init__(self,
                  render=False,
-                 num_objects = 2, sparse = True, TARG_LIMIT = 1.3, sparse_rew_thresh = 0.4 # TODO 6 when collecting examples.
+                 num_objects = 2, sparse = True, TARG_LIMIT = 1.3, sparse_rew_thresh = 0.3 # TODO 6 when collecting examples.
                  ):
         super().__init__(render = render, num_objects = num_objects, sparse = sparse, TARG_LIMIT = TARG_LIMIT, sparse_rew_thresh=sparse_rew_thresh)
 
