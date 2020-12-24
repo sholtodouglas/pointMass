@@ -25,14 +25,15 @@ class pointMassEnv(gym.GoalEnv):
 		'video.frames_per_second': 60
 		}
 
-		def __init__(self, render = False, num_objects = 0, sparse = True, TARG_LIMIT = 2, sparse_rew_thresh=0.3):
+		def __init__(self, render = False, num_objects = 0, sparse = True, TARG_LIMIT = 2, sparse_rew_thresh=0.3, pointMaze=False, deterministic_pos=False):
 			self.num_objects = num_objects
 
 			action_dim = 2
 			obs_dim = 4
 			self.ENVIRONMENT_BOUNDS = 2.5# LENGTH 6
 			self.sparse_rew_thresh = sparse_rew_thresh
-			self._max_episode_steps = 250
+
+			self._max_episode_steps = 100 + num_objects*100
 			
 			obs_dim += 4*num_objects # pos and vel of the other pm that we are knocking around.
 			self.num_goals = max(num_objects,1)
@@ -55,6 +56,7 @@ class pointMassEnv(gym.GoalEnv):
 
 			
 			self.isRender = False
+			self.GUI_ACTIVE = False
 			self._p = p
 			self.physics_client_active = 0
 			self.movable_goal = False
@@ -69,7 +71,8 @@ class pointMassEnv(gym.GoalEnv):
 			self.num_objects = num_objects
 			self.state_representation = None
 			self.sub_goals = None
-
+			self.pointMaze = pointMaze
+			self.deterministic_pos = deterministic_pos
 
 			if sparse:
 				self.set_sparse_reward()
@@ -103,6 +106,13 @@ class pointMassEnv(gym.GoalEnv):
 				for g in range(0,self.num_goals):
 					goal_x  = self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT), self.TARG_MIN)
 					goal_y  = self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT), self.TARG_MIN)
+					if self.pointMaze:
+						if self.deterministic_pos:
+							goal_x , goal_y = -0.6, 1.5
+						else:
+							goal_x = self.np_random.uniform(low=-self.TARG_LIMIT, high=-1.5)
+							goal_y = self.np_random.uniform(low=0.4, high=self.TARG_LIMIT)
+
 					self.goal += [goal_x, goal_y]
 
 			else:
@@ -385,7 +395,7 @@ class pointMassEnv(gym.GoalEnv):
 					self.reset_goal_pos()
 
 			if self.roving_goal:
-				if self.global_step % 60 == 0:
+				if self.global_step % 150 == 0:
 
 					self.reset_goal_pos()
 
@@ -411,6 +421,8 @@ class pointMassEnv(gym.GoalEnv):
 
 					if self.isRender:
 						self._p = bullet_client.BulletClient(connection_mode=p.GUI)
+						self._p.configureDebugVisualizer(self._p.COV_ENABLE_SHADOWS, 0)
+						self.GUI_ACTIVE = True
 					else:
 						self._p = bullet_client.BulletClient(connection_mode=p.DIRECT)
 
@@ -446,27 +458,34 @@ class pointMassEnv(gym.GoalEnv):
 							self.goal_cids.append(self._p.createConstraint(self.goals[g],-1,-1,-1,self._p.JOINT_FIXED,[1,1,1.4],[0,0,0],relativeChildPosition,relativeChildOrientation))
 						#self._p.setRealTimeSimulation(1)
 
+					colwallId = self._p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.05, 2.5, 0.5])
+					wallvisId = 10
+					wall = [self._p.createMultiBody(0, colwallId, 10, [self.TARG_LIMIT * 2 + 0.2, 0, 0.0],
+											  p.getQuaternionFromEuler([0, 0, 0]))]
+					wall = [self._p.createMultiBody(0, colwallId, 10, [-self.TARG_LIMIT * 2 - 0.2, 0, 0.0],
+											  p.getQuaternionFromEuler([0, 0, 0]))]
+					wall = [
+						self._p.createMultiBody(0, colwallId, 10, [0, self.TARG_LIMIT * 2 + 0.2, 0],
+										  p.getQuaternionFromEuler([0, 0, math.pi / 2]))]
+					wall = [
+						self._p.createMultiBody(0, colwallId, 10, [0, -self.TARG_LIMIT * 2 - 0.2, 0],
+										  p.getQuaternionFromEuler([0, 0, math.pi / 2]))]
+
+
+					if self.pointMaze:
+						divider = self._p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.7, 1.2, 0.5])
+						divider = [self._p.createMultiBody(0, divider, 10, [-0.8, 0, 0], p.getQuaternionFromEuler([0, 0, math.pi / 2]))]
+						divider = self._p.createCollisionShape(p.GEOM_BOX, halfExtents=[1.5, 0.6, 0.5])
+						divider = [self._p.createMultiBody(0, divider, 10, [-1.4, 1.1, 0],
+														   p.getQuaternionFromEuler([0, 0, math.pi / 2]))]
+
 					if self.num_objects > 0:
-
-
-
 						colcubeId = self._p.createCollisionShape(p.GEOM_BOX,halfExtents=[0.35,0.35,0.35])
 						for i in range(0,self.num_objects):
 							visId = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.35, 0.35, 0.35],
 														rgbaColor=colors[i])
 							self.objects.append(self._p.createMultiBody(0.1,colcubeId ,visId,[0,0,1.5]))
 
-
-
-						#self.object = self._p.createMultiBody(mass,colSphereId,visualShapeId,[0.5,0.5,0.4])
-						colwallId = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.05, 2.5, 0.5])
-						wallvisId = 10
-						wall = [p.createMultiBody(0, colwallId, 10, [self.TARG_LIMIT*2+0.2, 0, 0.0], p.getQuaternionFromEuler([0, 0, 0]))]
-						wall = [p.createMultiBody(0, colwallId, 10, [-self.TARG_LIMIT*2-0.2, 0, 0.0], p.getQuaternionFromEuler([0, 0, 0]))]
-						wall = [
-							p.createMultiBody(0, colwallId, 10, [0, self.TARG_LIMIT*2+0.2, 0], p.getQuaternionFromEuler([0, 0, math.pi / 2]))]
-						wall = [
-							p.createMultiBody(0, colwallId, 10, [0, -self.TARG_LIMIT*2-0.2, 0], p.getQuaternionFromEuler([0, 0, math.pi / 2]))]
 
 					if GUI:
 
@@ -501,6 +520,10 @@ class pointMassEnv(gym.GoalEnv):
 				else:
 					x  = self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT),self.TARG_MIN)
 					y  = self.crop(self.np_random.uniform(low=-self.TARG_LIMIT, high=self.TARG_LIMIT),self.TARG_MIN)
+					if self.pointMaze:
+						x = self.np_random.uniform(low=-2.0, high=-1.5)
+						y = self.np_random.uniform(low=-2.0, high=-1.5)
+
 				x_vel = 0#self.np_random.uniform(low=-1, high=1)
 				y_vel = 0#self.np_random.uniform(low=-1, high=1)
 
@@ -527,7 +550,7 @@ class pointMassEnv(gym.GoalEnv):
 			self.opposite_goal = True
 
 
-		def render(self, mode):
+		def render(self, mode='human'):
 
 			if (mode=="human"):
 				self.isRender = True
@@ -581,6 +604,12 @@ class pointMassEnvDense(pointMassEnv):
                  ):
         super().__init__(render = render, num_objects = num_objects, sparse = sparse, TARG_LIMIT = TARG_LIMIT)
 
+class pointMassEnvMaze(pointMassEnv):
+    def __init__(self,
+                 render=False,
+                 num_objects = 0, sparse = True, TARG_LIMIT = 1.3
+                 ):
+        super().__init__(render = render, num_objects = num_objects, sparse = sparse, TARG_LIMIT = TARG_LIMIT, pointMaze=True, deterministic_pos=True)
 
 
 def main(**kwargs):
@@ -589,7 +618,7 @@ def main(**kwargs):
 	cameraYaw = 35
 	cameraPitch = -35
 
-	env = pointMassEnvObjectDuo()
+	env = pointMassEnvMaze()
 	env.render(mode = 'human')
 	obs = env.reset()['observation']
 
@@ -609,8 +638,7 @@ def main(**kwargs):
 	while steps<3000:
 
 		spherePos, orn = env._p.getBasePositionAndOrientation(env.mass)
-		#print(spherePos)
-
+		
 		cameraTargetPosition = spherePos
 		env._p.resetDebugVisualizerCamera(cameraDistance, cameraYaw, cameraPitch, cameraTargetPosition)
 		camInfo = env._p.getDebugVisualizerCamera()
@@ -629,11 +657,11 @@ def main(**kwargs):
 				turn = 0
 
 			if (k == env._p.B3G_UP_ARROW and (v & env._p.KEY_WAS_TRIGGERED)):
-				forward = 0.6
+				forward = 1.8
 			if (k == env._p.B3G_UP_ARROW and (v & env._p.KEY_WAS_RELEASED)):
 				forward = 0
 			if (k == env._p.B3G_DOWN_ARROW and (v & env._p.KEY_WAS_TRIGGERED)):
-				forward = -0.6
+				forward = -1.8
 			if (k == env._p.B3G_DOWN_ARROW and (v & env._p.KEY_WAS_RELEASED)):
 				forward = 0
 
@@ -647,8 +675,9 @@ def main(**kwargs):
 		# env._p.stepSimulation()
 		time.sleep(3. / 240.)
 
-		_,r,_,_ = env.step(np.array(force))
-		print(r)
+		o,r,_,_ = env.step(np.array(force))
+		print(o['observation'][0:2])#print(r)
+
 		steps += 1
 		
 		
