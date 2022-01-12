@@ -293,9 +293,20 @@ class pointMassEnv(gym.GoalEnv):
             }
 
 			if self.isRender:
-				img = p.getCameraImage(48, 48, viewMatrix, projectionMatrix, shadow=0,
-									   flags=p.ER_NO_SEGMENTATION_MASK, renderer=p.ER_BULLET_HARDWARE_OPENGL)
-				return_dict['image'] = img[2][:,:,:3]
+
+				(_, _, px, depth, _) = p.getCameraImage(
+				48,
+				48,
+				viewMatrix,
+				projectionMatrix,
+				shadow=0,
+				flags=p.ER_NO_SEGMENTATION_MASK,
+				renderer=p.ER_BULLET_HARDWARE_OPENGL,
+				)
+
+				rgb_array = np.array(px, dtype=np.uint8)
+				rgb_array = np.reshape(rgb_array, (128, 128, 4))
+				return_dict["image"] = rgb_array[:, :, :3]
 
 
 
@@ -322,7 +333,7 @@ class pointMassEnv(gym.GoalEnv):
 			
 			# reward given if new pos is closer than old
 
-			current_distance = np.linalg.norm(achieved_goal - desired_goal, axis=1)
+			current_distance = np.linalg.norm(achieved_goal - desired_goal, axis=0)
 
 			position_reward = -1000*(current_distance - self.last_target_distance)
 			self.last_target_distance = current_distance
